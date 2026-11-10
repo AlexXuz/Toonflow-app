@@ -71,22 +71,10 @@
           <el-form-item v-else-if="activeTab === 'code'" class="sourceField" label="供应商代码">
             <el-input v-model="code" class="sourceInput" type="textarea" dir="ltr" :rows="10" resize="none" aria-label="供应商代码" />
           </el-form-item>
-          <el-form-item v-else class="sourceField" label="供应商文件链接">
-            <div class="urlImport">
-              <el-input v-model="sourceUrl" type="url" dir="ltr" :prefixIcon="IconLink" placeholder="请输入供应商 .ts 文件的直接下载链接" aria-label="供应商文件链接" />
-              <div class="urlHint" role="note" aria-label="文件链接填写说明">
-                <div class="urlHintHeader">
-                  <span class="urlHintTitle"><icon-file-code :size="16" aria-hidden="true" />供应商 .ts 文件直链</span>
-                  <span class="urlHintMeta">HTTP/HTTPS · 最大 1 MB</span>
-                </div>
-                <p><strong>不要填写中转站地址或 API Base URL</strong>，网页、文档及登录页无法导入。</p>
-              </div>
-            </div>
-          </el-form-item>
         </el-form>
         <section class="providerTips" aria-label="使用 AI 生成供应商">
           <h4>{{ provider ? '使用 AI 修改供应商' : '还没有供应商文件？' }}</h4>
-          <p>{{ provider ? '将当前代码交给 AI，说明需要修改的功能，生成后可继续编辑并保存。' : '让 AI 读取接口文档并生成代码，遇到登录可手动操作。' }}</p>
+          <p>{{ provider ? '将当前代码交给 AI，说明需要修改的功能，生成后可继续编辑并保存。' : '粘贴接口文档或请求示例，使用你配置的文本模型生成代码。' }}</p>
           <div class="assistantActions">
             <el-button type="primary" :icon="IconSparkles" :loading="openingAgent" :disabled="!modelChoices.length || saving || loadingSource || (!!provider && !revision)" @click="openAgent">{{ provider ? 'AI 修改供应商' : 'AI 生成供应商' }}</el-button>
             <el-button :icon="IconCopy" :disabled="loadingSource || (!!provider && !revision)" @click="copyPrompt">复制提示词给其他 AI</el-button>
@@ -102,7 +90,7 @@
     </el-scrollbar>
     <template #footer>
       <el-button :disabled="saving" @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="saving" :disabled="loadingSource || (!!provider && !revision) || !(isUrlImport ? sourceUrl : source).trim()" @click="addProvider">{{ provider ? '保存修改' : '确定添加供应商' }}</el-button>
+      <el-button type="primary" :loading="saving" :disabled="loadingSource || (!!provider && !revision) || !source.trim()" @click="addProvider">{{ provider ? '保存修改' : '确定添加供应商' }}</el-button>
     </template>
   </el-dialog>
   <component v-if="providerAgentDialog" :is="providerAgentDialog" v-model="agentVisible" :askUserEnabled="askUserEnabled" :provider="provider" :source="code" @generated="useGeneratedSource" />
@@ -113,7 +101,7 @@ import { translate } from "@toonflow/i18n/vue";
 import axios from "axios";
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch, type Component } from "vue";
 import formCreate, { type Api, type Options } from "@toonflow/provider-web/formCreate";
-import { IconFileCode, IconCode, IconFolderOpen, IconCopy, IconSparkles, IconLink } from "@tabler/icons-vue";
+import { IconFileCode, IconCode, IconFolderOpen, IconCopy, IconSparkles } from "@tabler/icons-vue";
 import { ElMessage } from "element-plus";
 import { mediaProviders } from "@toonflow/providers";
 import { modelIcon } from "@toonflow/model-icons";
@@ -139,16 +127,13 @@ const providerReadme = computed(() => {
   const provider = activeProvider.value;
   return provider && "readme" in provider && typeof provider.readme === "string" ? provider.readme : "";
 });
-const activeTab = ref<"file" | "code" | "url">("file");
-const isUrlImport = computed(() => mode === "custom" && activeTab.value === "url");
+const activeTab = ref<"file" | "code">("file");
 const addMethods = [
   { label: "文件导入", value: "file", icon: IconFileCode },
   { label: "粘贴代码", value: "code", icon: IconCode },
-  { label: "通过链接获取", value: "url", icon: IconLink },
 ];
 const promptExpanded = ref(false);
 const code = ref("");
-const sourceUrl = ref("");
 const fileSource = ref("");
 const fileName = ref("");
 const fileInput = ref<HTMLInputElement>();
@@ -191,7 +176,7 @@ watch(visible, value => {
   promptExpanded.value = false;
   formApi.value = undefined;
   addedProvider.value = undefined;
-  code.value = sourceUrl.value = fileSource.value = fileName.value = formError.value = revision.value = "";
+  code.value = fileSource.value = fileName.value = formError.value = revision.value = "";
   if (provider) void loadSource(provider.fileName);
 }, { immediate: true });
 
@@ -224,9 +209,6 @@ async function openAgent() {
   try {
     const { data } = await axios.get<{ data: { tools: { name: string; enabled: boolean; loadError?: string }[] } }>("/api/tools/get", { signal: controller.signal });
     if (controller.signal.aborted || !visible.value) return;
-    const browser = data.data.tools.find(tool => tool.name === "browser");
-    if (!browser?.enabled) throw new Error("请先在「工具市场」安装并启用网页浏览器工具");
-    if (browser.loadError) throw new Error(`浏览器工具加载失败：${browser.loadError}`);
     askUserEnabled.value = data.data.tools.some(tool => tool.name === "askUser" && tool.enabled && !tool.loadError);
     providerAgentDialog.value ??= defineAsyncComponent(() => import("./providerAgentDialog.vue"));
     agentVisible.value = true;
@@ -262,7 +244,7 @@ async function readSourceFile(event: Event) {
 }
 
 async function addProvider() {
-  if (saving.value || loadingSource.value || (provider && !revision.value) || !(isUrlImport.value ? sourceUrl.value : source.value).trim()) return;
+  if (saving.value || loadingSource.value || (provider && !revision.value) || !source.value.trim()) return;
   if (mode === "builtin" && !formApi.value) return;
   saving.value = true;
   formError.value = "";
@@ -289,7 +271,7 @@ async function addProvider() {
       }
     }
     if (!addedProvider.value) {
-      const payload = isUrlImport.value ? { url: sourceUrl.value.trim() } : { source: source.value };
+      const payload = { source: source.value };
       const { data } = await axios.post<{ data: MediaProvider }>("/api/providers/media/add", payload);
       addedProvider.value = data.data;
       emit("added", data.data);
@@ -430,51 +412,6 @@ async function copyPrompt() {
 
     .sourceField {
       margin-bottom: 0;
-
-      .urlImport {
-        display: grid;
-        gap: 8px;
-        width: 100%;
-
-        .urlHint {
-          padding: 10px 12px;
-          border: 1px solid var(--el-border-color-lighter);
-          border-radius: var(--el-border-radius-base);
-          background: var(--el-fill-color-light);
-          font-size: 12px;
-          line-height: 1.6;
-
-          .urlHintHeader {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 4px 12px;
-
-            .urlHintTitle {
-              display: inline-flex;
-              align-items: center;
-              gap: 6px;
-              color: var(--el-text-color-primary);
-              font-size: 13px;
-              font-weight: 500;
-
-              svg { flex-shrink: 0; }
-            }
-
-            .urlHintMeta {
-              color: var(--el-text-color-secondary);
-            }
-          }
-
-          p {
-            margin: 6px 0 0;
-            color: var(--el-text-color-regular);
-
-            strong { font-weight: 600; }
-          }
-        }
-      }
 
       .fileImport {
         width: 100%;

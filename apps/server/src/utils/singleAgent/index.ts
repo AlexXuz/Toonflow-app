@@ -136,6 +136,9 @@ export async function create(options: {
       if (typeof reference !== "string" && "name" in reference) definitions = [createClientTool(session, reference)];
       else {
         const pluginName = typeof reference === "string" ? reference : "node" in reference ? reference.node : reference.plugin;
+        if (["browser", "webFetch", "webSearch"].includes(pluginName)) {
+          throw Object.assign(new Error("本地部署不提供网页浏览、抓取或搜索工具，请粘贴所需资料"), { status: 410 });
+        }
         let loaded: Awaited<ReturnType<typeof loadNodeServerTool>>;
         if ((typeof reference !== "string" && "node" in reference)
           || (typeof reference === "string" && (nodeServices ??= await listNodeServerTools()).some(service => service.name === pluginName))) loaded = await loadNodeServerTool(pluginName);
