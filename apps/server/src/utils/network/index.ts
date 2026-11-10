@@ -1,9 +1,8 @@
 import { isIP } from "node:net";
 import { z } from "zod";
 import conf from "@/utils/conf";
-import { t } from "@/lib/i18n";
 import { readSystemProxy } from "./system";
-import { configureNetwork, requestNetwork } from "./transport";
+import { configureNetwork } from "./transport";
 
 const initialEnvironment = {
   httpProxy: process.env.http_proxy || process.env.HTTP_PROXY || process.env.all_proxy || process.env.ALL_PROXY || "",
@@ -57,23 +56,4 @@ export async function initializeNetwork() {
     configureNetwork({}, failure);
     console.warn(failure.message);
   }
-}
-
-export async function testNetwork(value: unknown, signal: AbortSignal) {
-  const profile = await prepareNetwork(value);
-  const startedAt = performance.now();
-  let status: number;
-  try {
-    const response = await requestNetwork("https://www.baidu.com/robots.txt", {
-      signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]), redirect: "error",
-    }, profile);
-    status = response.status;
-    await response.body?.cancel();
-  } catch {
-    if (signal.aborted) throw signal.reason;
-    // 不返回底层代理 URL 或认证信息。
-    throw Object.assign(new Error("连接测试失败，请检查代理地址、端口、认证信息及网络连接"), { status: 502 });
-  }
-  if (status !== 200) throw Object.assign(new Error(t`测试地址返回 HTTP ${status}`), { status: 502 });
-  return { latency: Math.round(performance.now() - startedAt) };
 }

@@ -78,7 +78,7 @@ export function useMcpControl() {
       const connectionId = crypto.randomUUID();
       const connection = new AbortController();
       const signal = AbortSignal.any([lifetime.signal, connection.signal]);
-      const headers = { Authorization: `Bearer ${token}`, "x-toonflow-workspace": "1" };
+      const headers = { "x-toonflow-mcp-token": token, "x-toonflow-workspace": "1" };
       let revision = 0;
       async function post(path: "state" | "result", body: object, callSignal?: AbortSignal) {
         const response = await fetch(`/api/mcp/control/${path}`, {

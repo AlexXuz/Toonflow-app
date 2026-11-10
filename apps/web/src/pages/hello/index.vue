@@ -20,9 +20,7 @@
       </div>
       <div v-else class="welcomeContent">
         <h1 id="welcomeTitle">快速开始</h1>
-        <p class="description">登录 Toonflow 即可免配置快速开始，直接开启创作。</p>
-        <accountPanel v-if="!loggedIn" class="accountContent" @loggedIn="startWithAccount" />
-        <el-button v-else class="startButton" type="primary" :loading="saving" @click="completeSetup">开始使用</el-button>
+        <p class="description">配置自己的 AI 模型 API，项目和素材保存在本服务器。</p>
         <div class="secondaryActions">
           <template v-if="!multiTenantEnabled">
             <el-button class="secondaryButton" round :disabled="saving" @click="view = 'custom'">
@@ -36,7 +34,6 @@
       </div>
 
       <footer class="pageFooter">
-        <el-button class="deviceLink" size="small" :icon="IconDevices" @click="mobileConnectVisible = true">{{ mobileConnectionLabel }}</el-button>
         <p>© {{ new Date().getFullYear() }} Toonflow · 保留所有权利。</p>
       </footer>
     </section>
@@ -47,7 +44,6 @@
         <span class="artName">Toonflow</span>
       </div>
     </div>
-    <mobileConnect v-model="mobileConnectVisible" />
   </main>
 </template>
 
@@ -55,29 +51,19 @@
 import { defineAsyncComponent, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import { IconArrowLeft, IconDevices } from "@tabler/icons-vue";
+import { IconArrowLeft } from "@tabler/icons-vue";
 import { customProviders, multiTenantEnabled, toonflowAccountToken } from "@/stores/settings";
 import { useHelloStore } from "@/stores/hello";
 import anonymousData from "@/lib/anonymousData";
 import logoSvg from "@toonflow/assets/logo.svg?raw";
 import bg from "./bg.vue";
 import languageSelect from "@/components/languageSelect.vue";
-import { mobileConnectionLabel } from "@/lib/mobile";
 
-const accountPanel = defineAsyncComponent(() => import("@/components/settings/panels/account/index.vue"));
 const languageModel = defineAsyncComponent(() => import("@/components/settings/panels/languageModel/index.vue"));
-const mobileConnect = defineAsyncComponent(() => import("@/components/mobileConnect.vue"));
-const mobileConnectVisible = ref(false);
 const view = ref<"welcome" | "custom">("welcome");
-const loggedIn = ref(!!toonflowAccountToken.value);
 const saving = ref(false);
 const router = useRouter();
 const hello = useHelloStore();
-
-function startWithAccount() {
-  loggedIn.value = true;
-  void completeSetup();
-}
 
 async function completeSetup() {
   if (saving.value) return;

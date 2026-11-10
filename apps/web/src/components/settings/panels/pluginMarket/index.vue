@@ -3,19 +3,10 @@
     <div class="marketToolbar">
       <div class="marketHeader">
         <nav class="marketNav" aria-label="插件列表">
-          <button class="navButton" type="button" :aria-pressed="isMarketTab" @click="activeTab = 'discover'">发现插件</button>
           <button class="navButton" type="button" :aria-pressed="activeTab === 'installed'" @click="activeTab = 'installed'">已安装</button>
           <button class="navButton" type="button" :aria-pressed="activeTab === 'mcp'" @click="activeTab = 'mcp'">MCP</button>
           <button class="navButton" type="button" :aria-pressed="activeTab === 'ffmpeg'" @click="activeTab = 'ffmpeg'">FFmpeg</button>
         </nav>
-        <div class="marketLinks">
-          <el-button tag="a" href="https://api.toonflow.net/console/plugIn" target="_blank" rel="noopener noreferrer" size="small" text :icon="IconExternalLink">
-            网页版市场
-          </el-button>
-          <el-button tag="a" href="https://qcn7xdsqgc4z.feishu.cn/docx/KNBNd9naqolsy6xjAOCcEAkqnRd" target="_blank" rel="noopener noreferrer" size="small" text :icon="IconBook">
-            开发者文档
-          </el-button>
-        </div>
       </div>
       <div v-if="isMarketTab || activeTab === 'installed'" class="marketControls">
         <form class="marketSearch" role="search" @submit.prevent="applySearch">
@@ -23,14 +14,6 @@
           <el-button size="small" nativeType="submit">搜索</el-button>
         </form>
         <div class="marketActions">
-          <el-button
-            size="small"
-            type="primary"
-            plain
-            :icon="IconCloudUpload"
-            :disabled="!accountToken"
-            :title="accountToken ? '上传插件到市场' : '请先在账号与余额中登录'"
-            @click="openUpload()">上传插件</el-button>
           <template v-if="activeTab === 'installed'">
             <el-button size="small" type="primary" :icon="IconUpload" :loading="installing" aria-label="安装本地插件" @click="pluginFileInput?.click()">
               安装插件
@@ -63,10 +46,6 @@
           </button>
         </div>
         <div class="filterOptions">
-          <div class="personalFilters" role="group" aria-label="我的插件">
-            <button class="filterButton" type="button" :aria-pressed="selectedType === 'collection'" @click="selectedType = 'collection'">收藏</button>
-            <button class="filterButton" type="button" :aria-pressed="selectedType === 'my'" @click="selectedType = 'my'">我的</button>
-          </div>
           <el-checkbox v-if="activeTab === 'installed'" v-model="hideBuiltin" class="builtinFilter" size="small">隐藏内置插件</el-checkbox>
         </div>
       </div>
@@ -110,17 +89,6 @@
               <h3 class="pluginName">
                 <component :is="pluginTypes[plugin.type].icon" :size="18" aria-hidden="true" />
                 <span class="pluginTitle">{{ plugin.displayName }}</span>
-                <a
-                  v-if="plugin.github"
-                  class="repoLink"
-                  :href="plugin.github"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  :aria-label="`${plugin.displayName} 的 GitHub`"
-                  title="GitHub"
-                  @click.stop>
-                  <icon-external-link :size="14" aria-hidden="true" />
-                </a>
               </h3>
               <span class="pluginId" :title="plugin.name">{{ plugin.name }}</span>
             </div>
@@ -295,13 +263,6 @@
         layout="total, prev, pager, next"
         size="small" />
       <pluginConfigDialog v-if="selectedConfigPlugin" v-model="configVisible" :plugin="selectedConfigPlugin" :canManage="canConfigurePlugin(selectedConfigPlugin)" />
-      <uploadPluginDialog
-        v-if="uploadVisible"
-        :plugin="selectedUploadPlugin"
-        :marketPlugin="selectedMarketPlugin"
-        :token="accountToken"
-        @uploaded="onPluginUploaded"
-        @closed="uploadVisible = false; selectedUploadPlugin = undefined; selectedMarketPlugin = undefined" />
       <agentEditorDialog v-if="selectedAgent" :key="selectedAgent.key" :agent="selectedAgent" :canManage="canManageAgents" @saved="refreshInstalled" @closed="selectedAgent = undefined" />
       <agentConnectDialog v-if="agentConnectVisible" @saved="refreshInstalled" @closed="agentConnectVisible = false" />
       <a2aSettingsDialog v-if="a2aSettingsVisible" @saved="refreshInstalled" @closed="a2aSettingsVisible = false" />
@@ -373,8 +334,6 @@ import type { Plugin as MarketPlugin } from "@toonflow/server/channel";
 import saveFile from "@/lib/saveFile";
 import { writeClipboardText } from "@/lib/clipboard";
 import pluginConfigDialog from "./pluginConfigDialog.vue";
-import uploadPluginDialog from "./uploadPluginDialog.vue";
-import { getPluginExistence } from "./marketUpload";
 import skillEditorDialog from "./skillEditorDialog.vue";
 import ffmpeg from "./ffmpeg.vue";
 import mcpServers from "./mcpServers.vue";
@@ -395,7 +354,7 @@ const pluginTypes = {
   agent: { label: "Agent", path: agentMarketEnabled ? "agents" : null, icon: IconSparkles2, tagType: "danger" },
 } as const;
 const tabs = { get discover() { return translate("发现插件"); }, get installed() { return translate("已安装"); }, mcp: "MCP", ffmpeg: "FFmpeg" } as const;
-const activeTab = ref<keyof typeof tabs>("discover");
+const activeTab = ref<keyof typeof tabs>("installed");
 const isMarketTab = computed(() => activeTab.value === "discover");
 const marketPage = ref(1);
 const marketPageSize = 20;
@@ -581,67 +540,6 @@ function hasMissingConfig(plugin: Plugin) {
 watch([activeTab, accountToken], () => { marketPage.value = 1; });
 
 watch(
-  () => [visible, activeTab.value, selectedTypes.value.discover, marketPage.value, appliedQuery.value, marketRefreshKey.value, accountToken.value],
-  async (_value, _previous, onCleanup) => {
-    marketLoading.value = false;
-    marketError.value = "";
-    marketPlugins.value = [];
-    const token = accountToken.value;
-    if (!visible || !isMarketTab.value || !token) {
-      marketTotal.value = 0;
-      return;
-    }
-    const controller = new AbortController();
-    onCleanup(() => controller.abort());
-    marketLoading.value = true;
-    try {
-      const pageData = await http<{ list: MarketPlugin[]; total: number }>({
-        method: "POST", url: "/api/channel/plugin/getPlugins",
-        data: {
-          page: marketPage.value,
-          limit: marketPageSize,
-          type: selectedTypes.value.discover,
-          ...(appliedQuery.value ? { searchKeyword: appliedQuery.value } : {}),
-        },
-        signal: controller.signal, headers: { Authorization: `Bearer ${token}` },
-      });
-      if (controller.signal.aborted || accountToken.value !== token) return;
-      marketTotal.value = pageData.total;
-      const lastPage = Math.max(1, Math.ceil(pageData.total / marketPageSize));
-      if (marketPage.value > lastPage) {
-        marketPage.value = lastPage;
-        return;
-      }
-      marketPlugins.value = pageData.list.map((item) => ({
-        key: `market:${item.id}`,
-        id: item.id,
-        isCollected: item.isCollected,
-        state: item.state,
-        rejectReason: item.rejectReason,
-        tags: item.tags,
-        demoVideoUrl: item.demoVideoUrl,
-        coverUrl: item.coverUrl,
-        type: item.type,
-        name: item.identifier.trim(),
-        displayName: item.name.trim() || item.identifier.trim(),
-        author: typeof item.supplier === "string" ? item.supplier : "",
-        description: typeof item.desc === "string" ? item.desc : "",
-        url: item.link,
-        fileName: item.fileName?.trim(),
-        version: item.version,
-      }));
-    } catch (error) {
-      if (!controller.signal.aborted && accountToken.value === token) {
-        marketTotal.value = 0;
-        marketError.value = errorMessage(error, "加载插件市场失败，请重试");
-      }
-    } finally {
-      if (!controller.signal.aborted && accountToken.value === token) marketLoading.value = false;
-    }
-  },
-  { immediate: true }
-);
-watch(
   () => [visible, activeTab.value, refreshKey.value],
   async (_value, _previous, onCleanup) => {
     if (!visible || (activeTab.value !== "discover" && activeTab.value !== "installed")) return;
@@ -687,33 +585,6 @@ watch(
   { immediate: true }
 );
 
-watch(
-  () => [visible, activeTab.value, accountToken.value, loading.value, localUploadCandidates.value, pluginExistenceRefreshKey.value],
-  async (_value, _previous, onCleanup) => {
-    pluginExistence.value = new Map();
-    pluginExistenceError.value = "";
-    checkingPluginExistence.value = false;
-    const token = accountToken.value;
-    if (!visible || activeTab.value !== "installed" || loading.value || !token || !localUploadCandidates.value.length) return;
-    const controller = new AbortController();
-    onCleanup(() => controller.abort());
-    const plugins = localUploadCandidates.value.map(plugin => ({ type: plugin.type, identifier: plugin.name }));
-    checkingPluginExistence.value = true;
-    try {
-      // ACT: 整批只请求一次；未接入或失败时保持未知，不查询市场分页兜底。
-      const results = await getPluginExistence(plugins, token, controller.signal);
-      if (controller.signal.aborted || accountToken.value !== token) return;
-      pluginExistence.value = new Map(results.map(item => [`${item.type}:${item.identifier}`, item.exists]));
-    } catch (error) {
-      if (!controller.signal.aborted && accountToken.value === token) {
-        pluginExistenceError.value = errorMessage(error, "检查插件市场状态失败，请重试");
-      }
-    } finally {
-      if (!controller.signal.aborted) checkingPluginExistence.value = false;
-    }
-  },
-  { immediate: true }
-);
 
 function applySearch() {
   appliedQuery.value = searchQuery.value.trim();
@@ -754,50 +625,9 @@ function installLabel(plugin: Plugin) {
   return current && incoming && incoming.compare(current) > 0 ? "更新" : "已安装";
 }
 
-async function toggleCollection(plugin: Plugin) {
-  const token = accountToken.value;
-  if (!visible || !isMarketTab.value || !token || plugin.id === undefined || plugin.state !== 1 || collectingPlugins.value.has(plugin.key) || deletingPlugins.value.has(plugin.key)) return;
-  const controller = marketMutationController;
-  collectingPlugins.value.add(plugin.key);
-  try {
-    const { collected } = await http<{ collected: boolean }>({
-      method: "POST", url: "/api/channel/plugin/toggleCollection", data: { pluginId: plugin.id },
-      signal: controller.signal, headers: { Authorization: `Bearer ${token}` },
-    });
-    if (controller.signal.aborted || accountToken.value !== token) return;
-    const current = marketPlugins.value.find(item => item.id === plugin.id);
-    if (current) current.isCollected = collected;
-    if (selectedType.value === "collection" || marketLoading.value) marketRefreshKey.value++;
-    ElMessage.success(collected ? "收藏成功" : "已取消收藏");
-  } catch (error) {
-    if (!controller.signal.aborted && accountToken.value === token) ElMessage.error(errorMessage(error, "修改收藏失败，请重试"));
-  } finally {
-    if (marketMutationController === controller) collectingPlugins.value.delete(plugin.key);
-  }
-}
+async function toggleCollection(_plugin: Plugin) {}
 
-async function deletePlugin(plugin: Plugin) {
-  const token = accountToken.value;
-  if (!visible || !isMarketTab.value || selectedType.value !== "my" || !token || plugin.id === undefined
-    || !marketPlugins.value.includes(plugin) || deletingPlugins.value.has(plugin.key)
-    || collectingPlugins.value.has(plugin.key) || pendingPlugins.value.has(plugin.key)) return;
-  const controller = marketMutationController;
-  deletingPlugins.value.add(plugin.key);
-  try {
-    const message = await http<string>({
-      method: "POST", url: "/api/channel/plugin/deletePlugin", data: { id: plugin.id },
-      signal: controller.signal, headers: { Authorization: `Bearer ${token}` },
-    });
-    if (controller.signal.aborted || accountToken.value !== token) return;
-    marketRefreshKey.value++;
-    pluginExistenceRefreshKey.value++;
-    ElMessage.success(message || "插件已从市场删除");
-  } catch (error) {
-    if (!controller.signal.aborted && accountToken.value === token) ElMessage.error(errorMessage(error, "删除插件失败，请重试"));
-  } finally {
-    if (marketMutationController === controller) deletingPlugins.value.delete(plugin.key);
-  }
-}
+async function deletePlugin(_plugin: Plugin) {}
 
 async function installMarketPlugin(plugin: Plugin) {
   const path = pluginTypes[plugin.type].path;

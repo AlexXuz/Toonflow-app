@@ -51,17 +51,6 @@
         </div>
         <el-button :icon="IconEdit" @click="systemPromptVisible = true">编辑提示词</el-button>
       </div>
-      <div v-if="!isRemoteConnection" class="developerRow">
-        <div class="toolDescription">
-          <h3>自定义更新源</h3>
-          <p>填写更新清单和安装包所在的目录地址，保存后可在关于页选择。</p>
-        </div>
-        <div class="updateSourceEditor">
-          <el-input v-model="customUpdateUrl" placeholder="https://example.com/desktopUpdates" aria-label="自定义更新源目录地址" clearable :disabled="savingUpdateUrl" @keyup.enter="saveCustomUpdateUrl" />
-          <el-button type="primary" :loading="savingUpdateUrl" @click="saveCustomUpdateUrl">保存</el-button>
-        </div>
-      </div>
-      <el-text v-if="!isRemoteConnection && updateUrlError" type="danger" role="alert">{{ updateUrlError }}</el-text>
       <div v-if="!isRemoteConnection" class="pluginInstaller">
         <div class="installerHeader">
           <h3>手动安装插件</h3>
@@ -71,15 +60,11 @@
           </el-select>
         </div>
         <div class="toolDescription">
-          <p>{{ selectedInstaller.description }}支持本地文件或文件直链，安装后可在插件市场查看。</p>
+          <p>{{ selectedInstaller.description }}仅支持本地文件，安装后可在本地插件中查看。</p>
         </div>
         <el-checkbox v-model="forceInstall" :disabled="!!installing">强制安装（允许覆盖同版本或降级）</el-checkbox>
         <input ref="fileInput" class="fileInput" type="file" :accept="selectedInstaller.accept" @change="installFile" />
         <el-button :icon="IconFileUpload" :loading="installing === 'file'" :disabled="!!installing" @click="fileInput?.click()">选择本地{{ selectedInstaller.label }}文件</el-button>
-        <div class="urlInstaller">
-          <el-input v-model="pluginUrl" :disabled="!!installing" :placeholder="`https://example.com/${selectedInstaller.example}`" :aria-label="`${selectedInstaller.label}文件地址`" clearable @keyup.enter="installUrl" />
-          <el-button type="primary" :icon="IconDownload" :loading="installing === 'url'" :disabled="!!installing || !pluginUrl.trim()" @click="installUrl">从 URL 安装</el-button>
-        </div>
         <el-text v-if="installError" type="danger" role="alert">{{ installError }}</el-text>
         <el-text v-else-if="installedName" type="success" role="status">{{ installedName }} 已安装</el-text>
       </div>

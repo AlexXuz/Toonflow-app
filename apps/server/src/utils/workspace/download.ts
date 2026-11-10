@@ -48,17 +48,6 @@ function requestFile(url: URL, signal: AbortSignal, accept: string) {
       const hostname = url.hostname.replace(/^\[|\]$/g, "");
       let addresses = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }] : await lookup(hostname, { all: true, verbatim: true });
       signal.throwIfAborted();
-      if (addresses.length && addresses.every(item => /^198\.(18|19)\./.test(item.address))) {
-        // ACT: 仅兼容 TUN 的 fake-IP 答案；固定 DoH 查回真实公网地址，不允许将特殊网段直接作为下载目标。
-        const dnsUrl = new URL("https://dns.alidns.com/resolve");
-        dnsUrl.searchParams.set("name", hostname);
-        dnsUrl.searchParams.set("type", "A");
-        const response = await fetch(dnsUrl, { signal, redirect: "error" });
-        if (!response.ok) invalid("无法解析下载文件的真实公网地址，请稍后重试", 502);
-        const answer = await response.json() as { Status?: number; Answer?: { type?: number; data?: unknown }[] };
-        addresses = answer.Status === 0 && Array.isArray(answer.Answer) ? answer.Answer.filter(item => item.type === 1 && typeof item.data === "string").map(item => ({ address: item.data as string, family: 4 })) : [];
-        signal.throwIfAborted();
-      }
       if (!addresses.length || addresses.some(item => !isPublicAddress(item.address))) invalid("不能下载解析到本机、内网或特殊网络地址的文件", 403);
       const address = addresses[0];
       const connection = new URL(url);

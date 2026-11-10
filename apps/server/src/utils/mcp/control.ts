@@ -48,7 +48,10 @@ export function getAppOrigin(req: Request) {
 export function authorizeMcp(req: Request) {
   const { enabled, token } = getMcpSettings();
   if (!enabled || token.length < 32 || !allowedHost(req)) return false;
-  const actual = Buffer.from(req.get("authorization") ?? "");
+  // 浏览器控制请求保留 HTTPS 入口的 Authorization，仅内部 MCP 协议使用 Bearer。
+  const credential = /^\/api\/mcp\/control\//i.test(req.originalUrl)
+    ? `Bearer ${req.get("x-toonflow-mcp-token") ?? ""}` : req.get("authorization") ?? "";
+  const actual = Buffer.from(credential);
   const expected = Buffer.from(`Bearer ${token}`);
   if (req.get("origin")) {
     try { getAppOrigin(req); } catch { return false; }

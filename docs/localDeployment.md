@@ -1,0 +1,28 @@
+# 本地存储部署
+
+此分支基于 AlexXuz/Toonflow-app fork。项目、素材、插件和设置保存在部署服务器；自行配置的 AI 模型 API 仍允许联网。它不是完全离线版本。
+
+移除了官方云账号/验证码/钱包/充值/模型渠道、官方插件市场和社区路由、首页广告、赞助推广、遥测上报和自动更新。保留自定义文本和媒体供应商、本地插件导入、项目画布与素材编辑。URL 插件安装、外部 FFmpeg 下载和固定百度/阿里 DNS 探测已取消；FFmpeg 使用系统安装版。独立构建不携带网页搜索、网页抓取、浏览器和自动下载 SDK 的工具插件。
+
+设备互联和多租户公开监听不启动，对应启用接口已移除，避免绕过统一认证入口。保留的 multiTenant/user/session 接口只说明当前独立模式，不负责验证密码。
+
+## 构建和运行
+
+需要 Bun 1.4.3；系统安装 FFmpeg/ffprobe。原生文档解析依赖缺少 Linux 版本时会回退到随包 WASM。Node.js 供部分插件使用。
+
+```sh
+bun install --frozen-lockfile
+bun run --cwd apps/server routes
+bun run build:server
+TOONFLOW_SERVER_HOST=127.0.0.1 \
+TOONFLOW_SERVER_PORT=3000 \
+TOONFLOW_PUBLIC_ORIGIN=https://toonflow.alexych.asia \
+TOONFLOW_DATA_DIR=/var/lib/toonflow \
+NODE_ENV=production bun build/server/index.js
+```
+
+部署完整 build 目录。数据目录与发行目录分离，并由运行服务的专用用户持有。仅单进程访问同一数据目录。
+
+全部页面、HTTP API、SSE、MCP、A2A 和媒体下载必须位于 HTTPS 认证反向代理后面；后端仅绑定回环地址。账号密码由代理配置，禁止写入本仓库。代理保留原 Host，设置 X-Forwarded-Proto；服务器只信任回环代理，并严格匹配 TOONFLOW_PUBLIC_ORIGIN 才允许通过外部域名管理本地工作区和插件。不要把后端端口映射至公网。
+
+建议 systemd 额外限制监听端口只允许主服务端口；MCP 默认关闭，启用前另行配置安全入口。运行用户只授予自身数据目录写权限。

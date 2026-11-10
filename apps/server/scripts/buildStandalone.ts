@@ -10,6 +10,7 @@ for (const group of ["nodes", "tools", "ext"]) {
   await rm(resolve(projectDir, "build", group), { recursive: true, force: true });
   for (const entry of await readdir(groupDirectory, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
+    if (group === "tools" && ["webFetch", "webSearch", "pluginDeveloper", "browser"].includes(entry.name)) continue;
     await $`${process.execPath} run build`
       .cwd(resolve(groupDirectory, entry.name))
       .env({ ...process.env, NODE_ENV: "production" });

@@ -54,14 +54,11 @@ export const accountProviderSchema = providerSchema.extend({
 });
 
 export function getAccountToken() {
-  const account = conf.get("settings", {}).toonflowAccount as { token?: unknown } | null | undefined;
-  return typeof account?.token === "string" ? account.token.trim() : "";
+  return "";
 }
 
-export function getAccountProvider() {
-  const accountToken = getAccountToken();
-  const parsed = accountProviderSchema.safeParse(conf.get("settings", {}).toonflowProvider);
-  return accountToken && parsed.success && parsed.data.token ? { ...parsed.data, apiKey: parsed.data.token } : undefined;
+export function getAccountProvider(): (z.infer<typeof accountProviderSchema> & { apiKey: string }) | undefined {
+  return undefined;
 }
 
 export function getConfiguredProviders() {

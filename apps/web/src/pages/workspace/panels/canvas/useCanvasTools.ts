@@ -8,7 +8,6 @@ import { isBrowserAudioAsrSupported, transcribeBrowserAudio } from "@toonflow/as
 import useWorkspaceFiles from "@/lib/workspaceFiles";
 import http from "@/lib/http";
 import { confirmPluginInstall } from "@/lib/pluginInstallConfirmation";
-import { openPluginUploadKey } from "@/components/settings/panels/pluginMarket/marketUpload";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { agentNodeToolPermissions } from "@/stores/settings";
 import { arrangeCanvas } from "./arrangeCanvas";
@@ -30,7 +29,6 @@ export function useCanvasTools(options: {
 }) {
   const flow = useVueFlow();
   const workspaceStore = useWorkspaceStore();
-  const openPluginUpload = inject(openPluginUploadKey)!;
   const getNodeTools = useNodeToolsContext();
   let nodeRevision = 0;
   let edgeRevision = 0;
@@ -148,7 +146,7 @@ export function useCanvasTools(options: {
         if (!directory) throw new Error("请先选择工作目录");
         const develop = <T>(action: typeof args.action | "previewInstall" = args.action, installDigest?: string) =>
           http<T>({ method: "POST", url: "/api/plugins/develop", data: { directory, ...args, action, installDigest }, signal, timeout: 360000 });
-        if (args.action === "upload") return openPluginUpload(() => develop<PluginUploadDraft>(), signal);
+        if (args.action === "upload") throw new Error("本地部署已移除云市场上传");
         if (args.action !== "install") return develop();
         const preview = await develop<PluginInstallPreview>("previewInstall");
         if (!preview || (preview.type !== "node" && preview.type !== "tool") || !preview.fileName || !/^[a-f0-9]{64}$/.test(preview.digest)) throw new Error("安装接口未返回有效的插件名称");

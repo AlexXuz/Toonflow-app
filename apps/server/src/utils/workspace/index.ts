@@ -10,7 +10,9 @@ export function isLocalHostRequest(req: Request) {
   if (conf.get("settings", {}).multiTenantEnabled === true && req.res?.locals.multiTenantUser?.role !== "admin") return false;
   const localAddress = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "") && req.get("x-toonflow-local-client") !== "0";
   const localHost = ["localhost", "127.0.0.1", "[::1]"].includes(req.hostname);
-  return localAddress && localHost;
+  const publicOrigin = process.env.TOONFLOW_PUBLIC_ORIGIN;
+  const proxyHost = publicOrigin && URL.canParse(publicOrigin) && new URL(publicOrigin).origin === `${req.protocol}://${req.get("host")}`;
+  return localAddress && (localHost || Boolean(proxyHost));
 }
 
 export async function getWorkspaceRoot(req: Request) {

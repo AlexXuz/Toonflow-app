@@ -7,7 +7,6 @@
         <el-radio value="custom">自定义代理</el-radio>
       </el-radio-group>
       <div class="networkActions">
-        <el-button :loading="testing" :disabled="busy" @click="testNetwork">测试</el-button>
         <el-button type="primary" nativeType="submit" :loading="saving" :disabled="busy">确定</el-button>
       </div>
     </div>
@@ -38,7 +37,6 @@
       </div>
     </div>
 
-    <p class="description">测试地址：<span dir="ltr">https://www.baidu.com/robots.txt</span></p>
     <el-alert v-if="requestError" :title="requestError" type="error" :closable="false" showIcon />
     <el-alert v-else-if="testLatency !== null" :title="`连接成功，耗时 ${testLatency} ms`" type="success" :closable="false" showIcon />
   </el-form>
@@ -97,23 +95,6 @@ function errorMessage(cause: unknown) {
     : cause instanceof Error ? cause.message : translate("网络设置操作失败");
 }
 
-async function testNetwork() {
-  if (busy.value) return;
-  testing.value = true;
-  requestError.value = "";
-  testLatency.value = null;
-  try {
-    const { data } = await axios.post<{ code: number; data: { latency: number }; message?: string }>(
-      "/api/settings/network/test", { network: readForm() }, { headers: { "x-toonflow-workspace": "1" }, signal: controller.signal },
-    );
-    if (data.code !== 200) throw new Error(data.message || "代理连接测试失败");
-    testLatency.value = Math.round(data.data.latency);
-  } catch (cause) {
-    if (!controller.signal.aborted) requestError.value = errorMessage(cause);
-  } finally {
-    testing.value = false;
-  }
-}
 
 async function saveNetwork() {
   if (busy.value) return;

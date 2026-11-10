@@ -88,6 +88,8 @@ export async function createApp({
   if (dataDirectory && skillsRoot) await initializePlugins(resolve(dataDirectory, "skills"), skillsRoot);
   if (dataDirectory && agentsRoot) await initializePlugins(resolve(dataDirectory, "agents"), agentsRoot);
   const app = express();
+  // ACT: 外部登录由本机 HTTPS 代理负责，只信任回环代理的协议头。
+  app.set("trust proxy", "loopback");
   app.locals.appVersion = appVersion;
   // ACT: 内置身份取自当前发行包的目录，不依赖作者或安装记录；更新后的同名插件仍属于内置插件。
   app.locals.builtinPlugins = Object.fromEntries(await Promise.all(
@@ -109,9 +111,6 @@ export async function createApp({
   }
   app.use(cors());
   app.use(languageRequest);
-  const { initializeMultiTenantRuntime, multiTenantAccess } = await import("@/utils/multiTenant/runtime");
-  initializeMultiTenantRuntime(app);
-  app.use(multiTenantAccess);
   app.use("/a2a", express.json({ limit: "2mb" }));
   app.use(["/api/workspaces/files/write", "/api/assets/save"], express.raw({ type: "application/octet-stream", limit: "100mb" }));
   app.use(express.json({ limit: "100mb" }));
@@ -143,7 +142,5 @@ export async function createApp({
     response.status(body.code).json(body);
   });
 
-  const { initializeMobileLinkRuntime } = await import("@/utils/mobileLink");
-  initializeMobileLinkRuntime(app);
   return app;
 }

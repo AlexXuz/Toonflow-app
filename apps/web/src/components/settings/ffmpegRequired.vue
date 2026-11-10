@@ -1,7 +1,7 @@
 <template>
   <el-dialog v-model="visible" title="FFmpeg" width="min(680px, calc(100vw - 32px))" alignCenter appendToBody destroyOnClose>
     <el-alert class="installationHint" title="安装完成后，请重新发起刚才的操作。" type="info" :closable="false" showIcon />
-    <ffmpeg v-if="visible" :downloadOnOpen="true" />
+    <ffmpeg v-if="visible"  />
   </el-dialog>
 </template>
 
@@ -25,8 +25,8 @@ events.onmessage = async event => {
   }
   pending = true;
   try {
-    await ElMessageBox.confirm("这项音视频处理需要 FFmpeg，但尚未检测到可用版本。现在下载并安装吗？", "需要 FFmpeg", {
-      confirmButtonText: "下载并安装", cancelButtonText: "暂不下载", closeOnClickModal: false,
+    await ElMessageBox.confirm("这项音视频处理需要 FFmpeg，但尚未检测到可用版本。请由服务器管理员安装后重试。", "需要 FFmpeg", {
+      confirmButtonText: "查看状态", cancelButtonText: "关闭", closeOnClickModal: false,
     });
     if (events.readyState !== EventSource.CLOSED) visible.value = true;
   } catch {
