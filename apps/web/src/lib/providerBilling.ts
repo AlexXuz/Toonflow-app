@@ -4,6 +4,7 @@ import { onScopeDispose, ref, watch } from "vue";
 import type { ProviderBalance } from "@toonflow/providers";
 import { multiTenantEnabled, settings, toonflowAccountToken } from "@/stores/settings";
 import { useWorkspaceStore } from "@/stores/workspace";
+import { refreshWebSession } from "@/lib/webAuth";
 
 type BalanceSnapshot = { accountId: string; balance: ProviderBalance | null; revision: number };
 
@@ -111,6 +112,7 @@ export function useProviderBalances() {
       };
       connection.onerror = () => {
         if (connections.get(group) !== connection) return;
+        void refreshWebSession();
         connection.close();
         connections.delete(group);
         retryConnection();

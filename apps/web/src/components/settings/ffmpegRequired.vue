@@ -9,11 +9,13 @@
 import { onBeforeUnmount, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { actualPlatform } from "@/lib/platform";
+import { refreshWebSession } from "@/lib/webAuth";
 import ffmpeg from "./panels/pluginMarket/ffmpeg.vue";
 
 const visible = ref(false);
 let pending = false;
 const events = new EventSource("/api/ffmpeg/events");
+events.onerror = () => { void refreshWebSession(); };
 events.onmessage = async event => {
   let data: { type?: string };
   try { data = JSON.parse(event.data); }

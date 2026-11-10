@@ -13,7 +13,9 @@ import { actualPlatform } from "@/lib/platform";
 import { getMissingBrowserFeatures } from "@/lib/browserCapabilities";
 import { publicWeb } from "@/stores/multiTenant";
 import { detectLocale, locale, setLocale, translate } from "@toonflow/i18n/vue";
+import { initializeWebAuth } from "@/lib/webAuth";
 
+initializeWebAuth();
 setLocale(detectLocale(navigator.languages));
 document.documentElement.classList.toggle("dark", window.matchMedia("(prefers-color-scheme: dark)").matches);
 document.documentElement.lang = locale.value;

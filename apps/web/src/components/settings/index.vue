@@ -32,13 +32,18 @@
         </div>
       </section>
     </div>
+    <template v-if="gatewayUser" #footer>
+      <el-button :loading="loggingOut" @click="logout">退出登录</el-button>
+    </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { translate } from "@toonflow/i18n/vue";
-import { computed, defineAsyncComponent, shallowRef, watch } from "vue";
+import { computed, defineAsyncComponent, ref, shallowRef, watch } from "vue";
+import { ElMessage } from "element-plus";
 import { hasDesktopUpdate } from "@/stores/desktopUpdate";
+import { gatewayUser, logoutWebSession } from "@/lib/webAuth";
 import {
   IconSettings,
   IconPhotoVideo,
@@ -83,6 +88,17 @@ const allSettingsPanels = [
 const settingsPanels = computed(() => allSettingsPanels);
 const activePanel = shallowRef(settingsPanels.value[0]!);
 const visible = defineModel<boolean>({ default: false });
+const loggingOut = ref(false);
+
+async function logout() {
+  if (loggingOut.value) return;
+  loggingOut.value = true;
+  try { await logoutWebSession(); }
+  catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "退出登录失败，请重试");
+    loggingOut.value = false;
+  }
+}
 
 watch(settingsPanels, panels => {
   activePanel.value = panels.find(item => item.id === activePanel.value.id) ?? panels[0]!;
