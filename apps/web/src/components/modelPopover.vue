@@ -37,13 +37,13 @@
         </el-form-item>
         <el-form-item v-if="reasoningLevels.length" label="思考强度">
           <div class="reasoningSettings">
-            <div class="reasoningGrid" role="radiogroup" aria-label="思考强度" :aria-describedby="`${reasoningId}Hint`" :style="{ gridTemplateColumns: `repeat(${reasoningColumns}, minmax(0, 1fr))` }">
+            <div class="reasoningGrid" role="radiogroup" aria-label="思考强度" :aria-describedby="reasoningOffOnly ? undefined : `${reasoningId}Hint`" :style="{ gridTemplateColumns: `repeat(${reasoningColumns}, minmax(0, 1fr))` }">
               <label v-for="option in reasoningOptions" :key="option.value" class="reasoningOption">
                 <input v-model="reasoningEffort" type="radio" :name="reasoningId" :value="option.value" :disabled="disabled" />
                 <span class="reasoningOptionLabel">{{ option.label }}</span>
               </label>
             </div>
-            <div :id="`${reasoningId}Hint`" class="reasoningHint">默认由模型决定</div>
+            <div v-if="!reasoningOffOnly" :id="`${reasoningId}Hint`" class="reasoningHint">默认由模型决定</div>
           </div>
         </el-form-item>
       </el-form>
@@ -77,13 +77,18 @@ const modelGroups = computed(() => {
   return [...groups.values()];
 });
 const reasoningLevels = computed(() => selectedModelChoice.value?.reasoningLevels ?? []);
-const reasoningOptions = computed(() => [{ label: "默认", value: "" }, ...reasoningLevels.value.map(value => ({ label: reasoningLabels[value], value }))]);
+const reasoningOffOnly = computed(() => reasoningLevels.value.length === 1 && reasoningLevels.value[0] === "off");
+const reasoningOptions = computed(() => [
+  ...(reasoningOffOnly.value ? [] : [{ label: "默认", value: "" }]),
+  ...reasoningLevels.value.map(value => ({ label: reasoningLabels[value], value })),
+]);
 const reasoningColumns = computed(() => Math.min(4, reasoningOptions.value.length > 4 ? Math.ceil(reasoningOptions.value.length / 2) : reasoningOptions.value.length));
 const reasoningLabel = computed(() => reasoningOptions.value.find(item => item.value === reasoningEffort.value)?.label ?? "默认");
 watch(modelChoices, items => {
   if (!selectedModel.value) selectedModel.value = items[0]?.value ?? "";
 }, { immediate: true });
 watch([() => selectedModelChoice.value?.reasoningLevels, reasoningEffort], ([levels, effort]) => {
+  if (levels?.length === 1 && levels[0] === "off") { reasoningEffort.value = "off"; return; }
   if (levels && effort && !levels.includes(effort as ThinkingLevel)) reasoningEffort.value = "";
 }, { immediate: true, flush: "post" });
 watch(() => !props.active || props.disabled, close => { if (close) visible.value = false; });

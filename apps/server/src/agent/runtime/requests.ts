@@ -9,6 +9,7 @@ import { getAgentTaskId } from "@/agent/runtime/sessions";
 import { getRequestFiles, type RequestFile } from "@/utils/ai/requestFiles";
 import { createFileTransport, FileRequestLimitError } from "@/utils/ai/files";
 import { getConfiguredProviders, publicAiMessage } from "@/utils/ai";
+import { applyModelRequestCompatibility } from "@/utils/ai/provider";
 import { createBillingUsageTracker } from "@/utils/ai/billingUsage";
 import { modelGateway, requireDirectModelAccess } from "@/utils/multiTenant/gateway";
 import type { ModelOutcome } from "@toonflow/multi-tenant-gateway/types";
@@ -249,6 +250,7 @@ export function configureAgentRequests(session: AgentSession, limits?: { maxRequ
               try {
                 streamSignal.throwIfAborted();
                 const body = await options?.onPayload?.(payload, requestModel) ?? payload;
+                applyModelRequestCompatibility(body, model.id, model.api);
                 streamSignal.throwIfAborted();
                 const images = getRequestFiles(body).filter(file => file.mimeType.toLowerCase().startsWith("image/"));
                 const imageCursors = new Map<string, number>();

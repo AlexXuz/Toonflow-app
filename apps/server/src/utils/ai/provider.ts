@@ -69,9 +69,24 @@ export function getConfiguredProviders() {
 
 const builtinModels: Model<KnownApi>[] = getBuiltinProviders().flatMap(provider => getBuiltinModels(provider));
 
+export function applyModelRequestCompatibility(payload: unknown, modelId: string, protocol: string) {
+  // ACT: Luna 的 Chat Completions 工具调用必须显式 none；省略参数仍会启用服务商默认推理。
+  if (modelId === "gpt-6-luna" && protocol === "openai-completions" && payload && typeof payload === "object") {
+    (payload as Record<string, unknown>).reasoning_effort = "none";
+  }
+}
+
 export function getModelReasoning(providerId: string, model: z.infer<typeof providerSchema>["models"][number], protocol: string) {
   const matches = builtinModels.filter(item => item.id === model.id);
   const base = matches.find(item => item.provider.toLowerCase() === providerId.toLowerCase() && item.api === protocol);
+  if (model.id === "gpt-6-luna" && protocol === "openai-completions") {
+    return {
+      reasoning: true,
+      reasoningLevels: ["off"] as ThinkingLevel[],
+      thinkingLevelMap: Object.fromEntries(thinkingLevels.map(level => [level, level === "off" ? "none" : null])) as ThinkingLevelMap,
+      compat: { ...base?.compat, supportsReasoningEffort: true },
+    };
+  }
   const candidates = base ? [base] : matches;
   const efforts = model.reasoningEfforts;
   const supported = candidates.map(item => item.reasoning ? getSupportedThinkingLevels(item) : []);

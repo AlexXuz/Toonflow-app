@@ -10,7 +10,7 @@ import { readFile, stat } from "@toonflow/file";
 import { resolveWorkspacePath } from "@/utils/workspace/files";
 import { getReadableFileMimeType } from "@/lib/documentFormats";
 import { readDocument } from "@/utils/documents";
-import { getConfiguredProviders, getModelLimits, getModelReasoning, getProviderBaseUrl, providerSchema } from "@/utils/ai/provider";
+import { applyModelRequestCompatibility, getConfiguredProviders, getModelLimits, getModelReasoning, getProviderBaseUrl, providerSchema } from "@/utils/ai/provider";
 import { modelGateway, requireDirectModelAccess } from "@/utils/multiTenant/gateway";
 import { createBillingUsageTracker } from "@/utils/ai/billingUsage";
 
@@ -182,6 +182,7 @@ export function streamAi(
     }, files.fetch),
     onPayload: async (payload) => {
       let body = payload as Record<string, unknown>;
+      applyModelRequestCompatibility(body, model.id, model.api);
       if (references.length) {
         const field = provider.protocol === "openai-responses" ? "input" : "messages";
         const messages = body[field] as { role: string; content: unknown }[];
