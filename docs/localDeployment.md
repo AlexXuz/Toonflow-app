@@ -29,4 +29,4 @@ NODE_ENV=production bun build/server/index.js
 
 当前部署通过 systemd 仅允许主服务 3000 和 MCP 内部 10588 端口，两者均监听 127.0.0.1。MCP 功能默认关闭，但初始化仍会建立本机 10588 监听；不要将其暴露至公网。运行用户只授予自身数据目录写权限。
 
-`gpt-6-luna` 使用 Chat Completions 时固定关闭推理，最终请求显式发送 `reasoning_effort: "none"`。普通对话、子 Agent、临时助手、上下文摘要和节点文本生成复用该兼容处理；模型选择器仅显示“关闭”。省略此参数会使用上游默认推理模式，与该接口的工具调用不兼容，参见 [OpenAI 工具调用兼容说明](https://developers.openai.com/api/docs/guides/latest-model)。其他模型及 Responses 协议仍沿用原配置。
+所有文字模型统一提供“关闭、默认、低、中、高”，不再按本地模型目录或 Luna 特例过滤选项。关闭会按协议显式发送标准 Chat Completions 的 `reasoning_effort: "none"`、Responses 的 `reasoning: { effort: "none" }` 或 Anthropic 的 `thinking: { type: "disabled" }`；已知兼容供应商沿用 SDK 对应的原生关闭格式。默认不发送思考或强度参数，由上游决定。低中高保留已有接口映射，历史 minimal 归入低，xhigh/max 归入高。普通对话、子 Agent、临时助手和上下文摘要使用同一请求处理，未提供强度选择的文本节点使用默认。接口若不支持关闭或某个强度，原错误会返回，不静默换档。Luna 的 Chat Completions 工具调用若仍要求关闭，请在选择器明确选“关闭”。

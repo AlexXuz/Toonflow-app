@@ -83,32 +83,35 @@
               <el-form-item class="reasoningMode" label="思考强度档位">
                 <el-select :modelValue="getReasoningMode(item)" aria-label="思考强度配置方式" @update:modelValue="setReasoningMode(item, $event)">
                   <el-option label="继承模型目录" value="inherit" />
-                  <el-option label="禁用思考强度" value="disabled" />
+                  <el-option label="使用协议默认映射" value="disabled" />
                   <el-option label="自定义档位" value="custom" />
                 </el-select>
               </el-form-item>
               <div v-if="getReasoningMode(item) === 'custom'" class="reasoningSettings">
                 <div class="reasoningChoices" aria-label="支持的思考档位">
                   <el-checkbox
-                    v-for="level in thinkingLevels"
+                    v-for="level in defaultThinkingLevels"
                     :key="level"
                     class="reasoningChoice"
                     border
-                    :modelValue="hasReasoningLevel(item, level)"
+                    :modelValue="level === 'off' || hasReasoningLevel(item, level)"
+                    :disabled="level === 'off'"
                     @update:modelValue="setReasoningLevel(item, level, !!$event)">
                     {{ thinkingLevelLabels[level] }}
                   </el-checkbox>
                 </div>
-                <el-text type="info" size="small">勾选支持的档位并填写接口值；off 可留空，不指定强度值。</el-text>
+                <el-text type="info" size="small">关闭按协议固定禁用思考；默认由模型决定，其余档位可自定义接口值。</el-text>
                 <div class="reasoningMappings">
-                  <div v-for="level in thinkingLevels.filter(level => hasReasoningLevel(item, level))" :key="level" class="reasoningRow">
+                  <div v-for="level in defaultThinkingLevels.filter(level => level === 'off' || hasReasoningLevel(item, level))" :key="level" class="reasoningRow">
                     <div class="reasoningLevel">
                       <span>{{ thinkingLevelLabels[level] }}</span>
                       <span class="reasoningKey">{{ level }}</span>
                     </div>
+                    <el-text v-if="level === 'off'" type="info">固定按协议关闭</el-text>
                     <el-input
+                      v-else
                       :modelValue="getReasoningValue(item, level)"
-                      :placeholder="level === 'off' ? '留空使用协议默认值' : '接口值，例如 ' + level"
+                      :placeholder="'接口值，例如 ' + level"
                       :aria-label="level + ' 接口值'"
                       @update:modelValue="setReasoningValue(item, level, $event)" />
                   </div>
@@ -168,7 +171,7 @@ import {
 } from "@tabler/icons-vue";
 import { saveSettings, type CustomProvider, type CustomProviderModel } from "@/stores/settings";
 import { languageProviders } from "@toonflow/providers";
-import { thinkingLevels, type ThinkingLevel, type ReasoningEfforts } from "@toonflow/server/modelReasoning";
+import { defaultThinkingLevels, type ThinkingLevel, type ReasoningEfforts } from "@toonflow/server/modelReasoning";
 
 const props = defineProps<{ provider?: CustomProvider }>();
 const visible = defineModel<boolean>({ default: false });
@@ -387,11 +390,11 @@ async function addProvider() {
     const efforts = item.reasoningEfforts;
     if (!efforts) continue;
     if (!Object.keys(efforts).some(level => level !== "off")) {
-      formError.value = `${item.id} 请至少启用一个思考档位，或选择继承目录 / 禁用`;
+      formError.value = `${item.id} 请至少自定义一个思考档位，或选择继承模型目录 / 使用协议默认映射`;
       return;
     }
     if (Object.entries(efforts).some(([level, value]) => !(level === "off" && value === null) && (typeof value !== "string" || !value.trim()))) {
-      formError.value = `${item.id} 的思考档位接口值不能为空，只有 off 可以留空`;
+      formError.value = `${item.id} 的自定义思考档位接口值不能为空`;
       return;
     }
   }

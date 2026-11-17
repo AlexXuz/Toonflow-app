@@ -250,7 +250,7 @@ export function configureAgentRequests(session: AgentSession, limits?: { maxRequ
               try {
                 streamSignal.throwIfAborted();
                 const body = await options?.onPayload?.(payload, requestModel) ?? payload;
-                applyModelRequestCompatibility(body, model.id, model.api);
+                applyModelRequestCompatibility(body, model.api, configured?.thinkingLevel);
                 streamSignal.throwIfAborted();
                 const images = getRequestFiles(body).filter(file => file.mimeType.toLowerCase().startsWith("image/"));
                 const imageCursors = new Map<string, number>();

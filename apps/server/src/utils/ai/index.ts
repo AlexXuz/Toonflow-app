@@ -182,7 +182,7 @@ export function streamAi(
     }, files.fetch),
     onPayload: async (payload) => {
       let body = payload as Record<string, unknown>;
-      applyModelRequestCompatibility(body, model.id, model.api);
+      applyModelRequestCompatibility(body, model.api);
       if (references.length) {
         const field = provider.protocol === "openai-responses" ? "input" : "messages";
         const messages = body[field] as { role: string; content: unknown }[];

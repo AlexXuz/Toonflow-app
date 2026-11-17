@@ -9,8 +9,9 @@ export async function getAgentModelConfiguration(providerId: string, modelId: st
   const configured = await getConfiguredModel(providerId, modelId);
   const actor = currentIdentity();
   if (configured.execution && !actor) throw Object.assign(new Error("请先登录 Toonflow"), { status: 401 });
-  // ACT: 旧版用 off 保存默认档位；模型未声明关闭能力时按默认处理，显式支持 off 的模型仍可关闭。
-  if (thinkingLevel === "off" && !configured.model.reasoningLevels.includes("off")) thinkingLevel = undefined;
+  // ACT: 历史档位归入统一低中高；off 始终明确关闭，默认只用 undefined 表示。
+  if (thinkingLevel === "minimal") thinkingLevel = "low";
+  if (thinkingLevel === "xhigh" || thinkingLevel === "max") thinkingLevel = "high";
   if (thinkingLevel !== undefined && !configured.model.reasoningLevels.includes(thinkingLevel)) {
     throw Object.assign(new Error(t`模型 ${configured.model.label} 不支持推理等级 ${thinkingLevel}`), { status: 400, code: "UNSUPPORTED_REASONING_EFFORT" });
   }
@@ -37,7 +38,7 @@ export async function createAgentModel(providerId: string, modelId: string, thin
     models: [{
       // ACT: 默认不传推理参数，避免 SDK 把内部 off 升到模型支持的首档。
       id: model.id, name: model.label, reasoning: configured.thinkingLevel === undefined ? false : model.reasoning, thinkingLevelMap: model.thinkingLevelMap,
-      compat: configured.thinkingLevel === undefined ? { ...model.compat, supportsMidConvoEffort: false } : model.compat,
+      compat: configured.thinkingLevel === undefined || configured.thinkingLevel === "off" ? { ...model.compat, supportsMidConvoEffort: false } : model.compat,
       // ACT: 保留图片输入，由实际供应方判断该模型是否支持。
       input: ["text", "image"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

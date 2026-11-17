@@ -13,7 +13,7 @@
         <el-button class="modelButton" text :disabled="disabled" aria-label="模型与思考强度设置">
           <modelIcon v-if="selectedModelChoice" :model="selectedModelChoice.modelId" :size="14" />
           <modelLabel class="modelName" :label="selectedModelChoice?.label ?? '选择模型'" :providerId="selectedModelChoice?.providerId" />
-          <template v-if="reasoningLevels.length">
+          <template v-if="selectedModelChoice">
             ·
             <span class="reasoningLabel">{{ reasoningLabel }}</span>
           </template>
@@ -35,15 +35,15 @@
             </el-option-group>
           </el-select>
         </el-form-item>
-        <el-form-item v-if="reasoningLevels.length" label="思考强度">
+        <el-form-item v-if="selectedModelChoice" label="思考强度">
           <div class="reasoningSettings">
-            <div class="reasoningGrid" role="radiogroup" aria-label="思考强度" :aria-describedby="reasoningOffOnly ? undefined : `${reasoningId}Hint`" :style="{ gridTemplateColumns: `repeat(${reasoningColumns}, minmax(0, 1fr))` }">
+            <div class="reasoningGrid" role="radiogroup" aria-label="思考强度" :aria-describedby="`${reasoningId}Hint`">
               <label v-for="option in reasoningOptions" :key="option.value" class="reasoningOption">
                 <input v-model="reasoningEffort" type="radio" :name="reasoningId" :value="option.value" :disabled="disabled" />
                 <span class="reasoningOptionLabel">{{ option.label }}</span>
               </label>
             </div>
-            <div v-if="!reasoningOffOnly" :id="`${reasoningId}Hint`" class="reasoningHint">默认由模型决定</div>
+            <div :id="`${reasoningId}Hint`" class="reasoningHint">默认由模型决定</div>
           </div>
         </el-form-item>
       </el-form>
@@ -57,7 +57,6 @@ import { IconChevronDown, IconChevronUp } from "@tabler/icons-vue";
 import { modelIcon } from "@toonflow/model-icons";
 import { useNodeModelSelection } from "@toonflow/nodes-scaffold/nodeAi";
 import modelLabel from "@toonflow/node-shared/modelLabel";
-import type { ThinkingLevel } from "@toonflow/server/modelReasoning";
 import { modelChoices, refreshModelChoices } from "@/stores/settings";
 
 const selectedModel = defineModel<string>({ default: "" });
@@ -65,7 +64,13 @@ const reasoningEffort = defineModel<string>("reasoningEffort", { default: "" });
 const props = withDefaults(defineProps<{ active?: boolean; disabled?: boolean }>(), { active: true, disabled: false });
 const visible = ref(false);
 const reasoningId = useId();
-const reasoningLabels: Record<ThinkingLevel, string> = { off: "关闭", minimal: "最小", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" };
+const reasoningOptions = [
+  { label: "关闭", value: "off" },
+  { label: "默认", value: "" },
+  { label: "低", value: "low" },
+  { label: "中", value: "medium" },
+  { label: "高", value: "high" },
+];
 const selectedModelChoice = useNodeModelSelection(modelChoices, selectedModel);
 const modelGroups = computed(() => {
   const groups = new Map<string, { id: string; label: string; models: Array<(typeof modelChoices.value)[number]> }>();
@@ -76,20 +81,14 @@ const modelGroups = computed(() => {
   }
   return [...groups.values()];
 });
-const reasoningLevels = computed(() => selectedModelChoice.value?.reasoningLevels ?? []);
-const reasoningOffOnly = computed(() => reasoningLevels.value.length === 1 && reasoningLevels.value[0] === "off");
-const reasoningOptions = computed(() => [
-  ...(reasoningOffOnly.value ? [] : [{ label: "默认", value: "" }]),
-  ...reasoningLevels.value.map(value => ({ label: reasoningLabels[value], value })),
-]);
-const reasoningColumns = computed(() => Math.min(4, reasoningOptions.value.length > 4 ? Math.ceil(reasoningOptions.value.length / 2) : reasoningOptions.value.length));
-const reasoningLabel = computed(() => reasoningOptions.value.find(item => item.value === reasoningEffort.value)?.label ?? "默认");
+const reasoningLabel = computed(() => reasoningOptions.find(item => item.value === reasoningEffort.value)?.label ?? "默认");
 watch(modelChoices, items => {
   if (!selectedModel.value) selectedModel.value = items[0]?.value ?? "";
 }, { immediate: true });
-watch([() => selectedModelChoice.value?.reasoningLevels, reasoningEffort], ([levels, effort]) => {
-  if (levels?.length === 1 && levels[0] === "off") { reasoningEffort.value = "off"; return; }
-  if (levels && effort && !levels.includes(effort as ThinkingLevel)) reasoningEffort.value = "";
+watch(reasoningEffort, effort => {
+  if (effort === "minimal") reasoningEffort.value = "low";
+  else if (effort === "xhigh" || effort === "max") reasoningEffort.value = "high";
+  else if (!reasoningOptions.some(item => item.value === effort)) reasoningEffort.value = "";
 }, { immediate: true, flush: "post" });
 watch(() => !props.active || props.disabled, close => { if (close) visible.value = false; });
 watch(visible, value => { if (value) void refreshModelChoices().catch(() => {}); });
@@ -164,6 +163,7 @@ watch(visible, value => { if (value) void refreshModelChoices().catch(() => {});
 
         .reasoningGrid {
           display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 6px;
 
           .reasoningOption {

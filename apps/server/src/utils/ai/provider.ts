@@ -1,5 +1,5 @@
 import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
-import { getSupportedThinkingLevels, type KnownApi, type Model, type ThinkingLevelMap } from "@earendil-works/pi-ai";
+import { type KnownApi, type Model, type ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { defaultThinkingLevels, thinkingLevels, type ThinkingLevel } from "@/lib/modelReasoning";
 import conf from "@/utils/conf";
 import { findModelContextLimits } from "@/utils/ai/modelContextLimits";
@@ -69,49 +69,56 @@ export function getConfiguredProviders() {
 
 const builtinModels: Model<KnownApi>[] = getBuiltinProviders().flatMap(provider => getBuiltinModels(provider));
 
-export function applyModelRequestCompatibility(payload: unknown, modelId: string, protocol: string) {
-  // ACT: Luna 的 Chat Completions 工具调用必须显式 none；省略参数仍会启用服务商默认推理。
-  if (modelId === "gpt-6-luna" && protocol === "openai-completions" && payload && typeof payload === "object") {
-    (payload as Record<string, unknown>).reasoning_effort = "none";
+export function applyModelRequestCompatibility(payload: unknown, protocol: string, thinkingLevel?: ThinkingLevel) {
+  if (!payload || typeof payload !== "object" || (thinkingLevel !== undefined && thinkingLevel !== "off")) return;
+  const body = payload as Record<string, unknown>;
+  // ACT: SDK 的内部 off 同时承载默认与关闭；最终请求按用户选择区分，不能按模型名强制覆盖。
+  if (thinkingLevel === "off" && protocol === "openai-completions") {
+    // ACT: 已知兼容协议由 SDK 生成原生关闭格式；标准 OpenAI 或未知模型补齐明确 none。
+    if (!["thinking", "enable_thinking", "chat_template_kwargs", "chat_template_args", "reasoning"].some(key => Object.hasOwn(body, key))) {
+      body.reasoning_effort = "none";
+    }
+    return;
   }
+  delete body.reasoning_effort;
+  delete body.reasoning;
+  delete body.thinking;
+  delete body.enable_thinking;
+  delete body.thinking_token_budget;
+  delete body.thinking_budget;
+  delete body.thinking_budget_tokens;
+  delete body.chat_template_kwargs;
+  delete body.chat_template_args;
+  if (body.output_config && typeof body.output_config === "object") {
+    const output = { ...body.output_config } as Record<string, unknown>;
+    delete output.effort;
+    if (Object.keys(output).length) body.output_config = output;
+    else delete body.output_config;
+  }
+  if (thinkingLevel !== "off") return;
+  if (protocol === "openai-responses") body.reasoning = { effort: "none" };
+  else if (protocol === "anthropic-messages") body.thinking = { type: "disabled" };
 }
 
 export function getModelReasoning(providerId: string, model: z.infer<typeof providerSchema>["models"][number], protocol: string) {
   const matches = builtinModels.filter(item => item.id === model.id);
   const base = matches.find(item => item.provider.toLowerCase() === providerId.toLowerCase() && item.api === protocol);
-  if (model.id === "gpt-6-luna" && protocol === "openai-completions") {
-    return {
-      reasoning: true,
-      reasoningLevels: ["off"] as ThinkingLevel[],
-      thinkingLevelMap: Object.fromEntries(thinkingLevels.map(level => [level, level === "off" ? "none" : null])) as ThinkingLevelMap,
-      compat: { ...base?.compat, supportsReasoningEffort: true },
-    };
-  }
   const candidates = base ? [base] : matches;
   const efforts = model.reasoningEfforts;
-  const supported = candidates.map(item => item.reasoning ? getSupportedThinkingLevels(item) : []);
-  const wireValue = (item: Model<KnownApi>, level: ThinkingLevel) => item.thinkingLevelMap?.[level] ?? (level === "off" ? undefined : level);
-  // ACT: 中转站仅继承同 ID 模型共同支持且接口值一致的档位，不猜别名或取能力全集。
-  const inheritedLevels: ThinkingLevel[] = candidates.length
-    ? thinkingLevels.filter(level => candidates.every((item, index) => supported[index]!.includes(level)
-      && wireValue(item, level) === wireValue(candidates[0]!, level)))
-    // ACT: 目录未知不等于禁用，保留旧版低中高；额外档位由模型显式声明。
-    : [...defaultThinkingLevels];
-  const reasoningLevels = efforts === false ? [] : efforts
-    ? thinkingLevels.filter(level => Object.hasOwn(efforts, level))
-    : inheritedLevels;
-  const reasoning = reasoningLevels.length > 0;
+  // ACT: 统一提供关闭与低中高，不用本地目录过滤中转站模型；实际能力由配置的接口校验。
+  const reasoningLevels: ThinkingLevel[] = [...defaultThinkingLevels];
   const thinkingLevelMap: ThinkingLevelMap = {};
   for (const level of thinkingLevels) {
     if (!reasoningLevels.includes(level)) { thinkingLevelMap[level] = null; continue; }
-    const wire = efforts ? efforts[level] : candidates[0] ? wireValue(candidates[0], level) : level;
-    if (wire != null) thinkingLevelMap[level] = wire;
+    const inherited = candidates[0]?.thinkingLevelMap?.[level];
+    const common = candidates.every(item => item.thinkingLevelMap?.[level] === inherited) ? inherited : undefined;
+    thinkingLevelMap[level] = level === "off" ? "none" : (efforts && efforts[level]) || (efforts === false ? undefined : common) || level;
   }
   // ACT: 显式接口值声明使用 Anthropic effort 协议，避免 SDK 将映射值改为 token 预算。
   const compat = protocol === "anthropic-messages" && efforts
     ? { ...base?.compat, forceAdaptiveThinking: true, supportsMidConvoEffort: false }
-    : base?.compat;
-  return { reasoning, thinkingLevelMap, reasoningLevels, compat };
+    : protocol === "openai-completions" ? { ...base?.compat, supportsReasoningEffort: true } : base?.compat;
+  return { reasoning: true, thinkingLevelMap, reasoningLevels, compat };
 }
 
 export function getModelLimits(providerId: string, model: z.infer<typeof providerSchema>["models"][number]) {
