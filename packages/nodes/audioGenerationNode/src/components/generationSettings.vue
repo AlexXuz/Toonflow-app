@@ -13,6 +13,17 @@
         <span>音频参数</span>
       </div>
       <div class="settingsFields">
+        <div v-if="model?.voices?.length || voice" class="settingField">
+          <span class="fieldLabel">音色</span>
+          <el-select :modelValue="voice ?? ''" :disabled="disabled" :teleported="false" aria-label="音色" @update:modelValue="voice = $event || undefined">
+            <el-option label="模型默认" value="" />
+            <el-option v-for="item in model?.voices ?? []" :key="item.voice" :label="item.title" :value="item.voice" />
+          </el-select>
+        </div>
+        <div v-if="model?.voices?.length || speed !== undefined" class="settingField">
+          <span class="fieldLabel">语速</span>
+          <el-input-number v-model="speed" :step="0.05" :disabled="disabled" placeholder="模型默认" aria-label="语速倍数" />
+        </div>
         <div class="settingField">
           <span class="fieldLabel">语种</span>
           <el-segmented v-model="language" :options="languageOptions" :disabled="disabled" block aria-label="音频语种" />
@@ -34,7 +45,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ElButton, ElPopover, ElSegmented } from "element-plus";
+import { ElButton, ElInputNumber, ElOption, ElPopover, ElSegmented, ElSelect } from "element-plus";
 import { IconAdjustmentsHorizontal, IconChevronDown, IconChevronUp } from "@tabler/icons-vue";
 import type { NodeMediaModel } from "@toonflow/nodes-scaffold/runtime";
 import modelForm from "@toonflow/node-shared/modelForm";
@@ -42,6 +53,8 @@ import { languageOptions, sampleRateOptions, formatOptions } from "../audioSetti
 
 defineProps<{ model?: NodeMediaModel; disabled?: boolean }>();
 const settingsVisible = ref(false);
+const voice = defineModel<string | undefined>("voice", { required: true });
+const speed = defineModel<number | undefined>("speed", { required: true });
 const language = defineModel<string>("language", { required: true });
 const sampleRate = defineModel<number>("sampleRate", { required: true });
 const format = defineModel<string>("format", { required: true });
@@ -88,6 +101,8 @@ const languageLabel = computed(() => languageOptions.find(item => item.value ===
         color: var(--el-text-color-secondary);
         font-size: 12px;
       }
+
+      .el-select, .el-input-number { flex: 1; min-width: 0; }
 
       .el-segmented {
         flex: 1;

@@ -37,7 +37,7 @@
             aria-label="音频生成模型"
             noDataText="请先在设置中添加音频模型"
             placement="top-start"
-            @update:modelValue="data.model = $event"
+            @update:modelValue="selectModel"
             @visible-change="visible => visible && loadModels().catch(error => showNodeError(error, '模型读取失败'))">
             <template v-if="!selectedModel" #prefix><icon-music-bolt :size="17" /></template>
             <template #label="{ label }"><modelLabel :label="label" :providerId="selectedModel?.providerId" :modelId="selectedModel?.modelId" /></template>
@@ -47,7 +47,15 @@
               </el-option>
             </el-option-group>
           </el-select>
-          <generationSettings v-model:language="data.language" v-model:sampleRate="data.sampleRate" v-model:format="data.format" v-model:other="data.other" :model="selectedModel" :disabled="busy || !selectedModel" />
+          <generationSettings
+            v-model:voice="data.voice"
+            v-model:speed="data.speed"
+            v-model:language="data.language"
+            v-model:sampleRate="data.sampleRate"
+            v-model:format="data.format"
+            v-model:other="data.other"
+            :model="selectedModel"
+            :disabled="busy || !selectedModel" />
           <div class="generationActions">
             <mediaPrice v-if="generationInput" :input="{ ...generationInput, mediaType: 'audio' }" :supported="selectedModel?.supportsPrice === true" />
             <el-button v-if="pendingRecovery" class="sendButton" :icon="IconPlayerStop" :loading="cancelling" :disabled="deleting || uploading || transcribing || actions?.processing" title="放弃任务" aria-label="放弃任务" @click="generationState.cancel().catch(error => showNodeError(error, '停止生成失败'))" />
@@ -99,7 +107,7 @@ defineOptions({
 const vLoading = ElLoading.directive;
 const { id, node, nodeProps, nodeEvent, outputs, files, ai, updateNodeInternals } = useNode({ label: "音频生成", onModelsChanged: () => void refreshProviderModels() });
 type PromptModel = NonNullable<InstanceType<typeof promptInput>["$props"]["modelValue"]>;
-const data = computed(() => node.data as { prompt: string; promptModel: PromptModel; model: string; language: string; sampleRate: number; format: string; other: Record<string, unknown> });
+const data = computed(() => node.data as { prompt: string; promptModel: PromptModel; model: string; voice?: string; speed?: number; language: string; sampleRate: number; format: string; other: Record<string, unknown> });
 data.value.prompt ??= "";
 data.value.promptModel ??= [];
 data.value.model ??= "";
@@ -131,6 +139,8 @@ const busy = computed(() => generating.value || uploading.value || deleting.valu
 watch(busy, value => { if (!value && modelsRefreshPending) void refreshProviderModels(); });
 const selectedModel = useNodeModelSelection(models, computed({ get: () => data.value.model, set: value => { data.value.model = value; } }));
 useModelForm(data, selectedModel);
+const voiceSchema = z.string().trim().min(1).max(256).nullable();
+const speedSchema = z.number().finite().positive().nullable();
 const modelGroups = computed(() => groupNodeModels(models.value));
 const generationPrompt = computed(() => [data.value.prompt.trim(), ...refList.value.flatMap((item, index) =>
   item.dataType === "STRING" && item.value?.trim() ? [`参考 ${index + 1}：\n${item.value.trim()}`] : [])].filter(Boolean).join("\n\n"));
@@ -140,6 +150,8 @@ const generationInput = computed<Omit<NodeAudioRequest, "directory"> | undefined
   return {
     ...getNodeModelIdentity(choice),
     prompt: generationPrompt.value,
+    voice: data.value.voice,
+    speed: data.value.speed,
     language: data.value.language,
     sampleRate: data.value.sampleRate,
     format: data.value.format,
@@ -150,6 +162,31 @@ const generationInput = computed<Omit<NodeAudioRequest, "directory"> | undefined
   };
 });
 const previewUrl = files.useFileUrl(outputFile, error => showNodeError(error, "音频读取失败"));
+
+function selectModel(key: string) {
+  if (key !== data.value.model) {
+    data.value.voice = undefined;
+    data.value.speed = undefined;
+  }
+  data.value.model = key;
+}
+
+function validateVoice(model: NodeMediaModel, voice?: string) {
+  if (!voice) return;
+  if (!voiceSchema.safeParse(voice).success || (model.voices?.length && !model.voices.some(item => item.voice === voice))) {
+    throw new Error("请选择当前模型支持的音色，或使用模型默认音色");
+  }
+}
+
+function speechSetting<T>(field: "voice" | "speed", value: T | undefined, schema: z.ZodType<T>, other: Record<string, unknown>, modelOptions: Record<string, unknown>) {
+  // ACT: 兼容误放进 other 的标准字段；供应商已声明的同名自定义字段保留原语义。
+  if (!Object.hasOwn(other, field) || Object.hasOwn(modelOptions, field)) return value;
+  const parsed = schema.safeParse(other[field]);
+  if (!parsed.success) throw new Error(`other.${field} 的值无效，请按 setConfig 的顶层 ${field} 参数填写`);
+  if (value !== undefined && value !== parsed.data) throw new Error(`${field} 与 other.${field} 不一致，请只传一个值`);
+  delete other[field];
+  return parsed.data;
+}
 
 function referencesAllowed(values: NodeInputValue[]) {
   return values.filter(item => isTypeCompatible(item.dataType, ["IMAGE", "AUDIO"])).length <= 1;
@@ -218,8 +255,11 @@ async function startGeneration() {
     return { status: "generating" };
   }
   const input = generationInput.value;
-  if (!input) throw new Error("请先选择音频模型");
+  const choice = selectedModel.value;
+  if (!input || !choice) throw new Error("请先选择音频模型");
   if (!generationPrompt.value) throw new Error("请输入生成提示词或待朗读文本");
+  validateVoice(choice, input.voice);
+  if (input.speed !== undefined && !speedSchema.safeParse(input.speed).success) throw new Error("语速必须为正数");
   if (!referencesAllowed(refList.value)) throw new Error("图片和音频不能同时引用，且合计最多引用一个；文本数量不限");
   if (refList.value.some(item => item.value === undefined)) throw new Error("引用节点暂无内容，请先补充引用内容");
   if (!languageOptions.some(item => item.value === data.value.language) || !sampleRateOptions.includes(data.value.sampleRate) || !formatOptions.includes(data.value.format)) throw new Error("请重新选择有效的语种、采样率和输出格式");
@@ -280,8 +320,14 @@ nodeEvent.on("delete", async () => {
 });
 
 function getConfig() {
+  const choice = selectedModel.value;
   return {
-    config: { providerId: selectedModel.value?.providerId ?? "", modelId: selectedModel.value?.modelId ?? "", language: data.value.language, sampleRate: data.value.sampleRate, format: data.value.format, other: { ...data.value.other } },
+    config: {
+      providerId: choice?.providerId ?? "", modelId: choice?.modelId ?? "", voice: data.value.voice ?? null,
+      speed: data.value.speed ?? null, language: data.value.language, sampleRate: data.value.sampleRate,
+      format: data.value.format, other: { ...data.value.other },
+    },
+    voices: choice?.voices ?? [],
     models: models.value,
     languages: languageOptions,
     sampleRates: sampleRateOptions,
@@ -292,7 +338,7 @@ function getConfig() {
 
 nodeTools.register({
   name: "getConfig",
-  description: "读取此音频生成节点的配置、自定义配置 other、可选音频模型、语种、采样率、输出格式与输入数量限制，models 中的 rules 声明自定义字段，不含密钥；文本不限，图片与音频互斥且合计最多一个，具体模型能力由供应商校验",
+  description: "读取音频节点设置和模型能力。voices 是当前模型列出的音色，config.voice 和 config.speed 为 null 时使用模型默认值。模型的 rules 只声明 other 中的自定义字段。模型相关的音色、语速和参考输入限制由供应商校验。",
   parameters: z.strictObject({}),
   async execute(_args, { signal }) {
     signal?.throwIfAborted();
@@ -303,10 +349,12 @@ nodeTools.register({
 });
 nodeTools.register({
   name: "setConfig",
-  description: "修改音频生成模型、语种、采样率、格式或自定义配置 other；先用 getConfig 查询选项，providerId 与 modelId 必须同时提供；other 按目标模型 rules 的 field 和值要求填写，仅更新传入字段，其余保留，切换模型时使用新模型默认值；不修改提示词、不启动生成",
+    description: "修改音频节点设置。先用 getConfig 查询能力，只传要改的字段。音色 voice 和语速 speed 是 args 的顶层参数，例如 {voice:'echo',speed:0.95}，null 恢复模型默认值。按目标模型的 voices 取音色，other 仅填模型 rules 声明的自定义字段。切换模型须同时传 providerId/modelId。只保存设置，不启动生成。",
   parameters: z.strictObject({
     providerId: z.string().min(1).optional(),
     modelId: z.string().min(1).optional(),
+      voice: voiceSchema.optional(),
+      speed: speedSchema.optional(),
     language: z.string().optional(),
     sampleRate: z.number().int().positive().optional(),
     format: z.string().optional(),
@@ -323,8 +371,18 @@ nodeTools.register({
     if (args.language !== undefined && !languageOptions.some(item => item.value === args.language)) throw new Error("请选择 getConfig 返回的有效语种");
     if (args.sampleRate !== undefined && !sampleRateOptions.includes(args.sampleRate)) throw new Error("请选择 getConfig 返回的有效采样率");
     if (args.format !== undefined && !formatOptions.includes(args.format)) throw new Error("请选择 getConfig 返回的有效输出格式");
-    const other = getModelFormValues(choice, choice === selectedModel.value ? data.value.other : {}, args.other);
+      const sameModel = choice === selectedModel.value;
+      const modelOptions = getModelFormValues(choice, sameModel ? data.value.other : {});
+      const otherUpdates = { ...args.other };
+      const voiceUpdate = speechSetting("voice", args.voice, voiceSchema, otherUpdates, modelOptions);
+      const speedUpdate = speechSetting("speed", args.speed, speedSchema, otherUpdates, modelOptions);
+      const voice = voiceUpdate === undefined && sameModel ? data.value.voice : voiceUpdate ?? undefined;
+      const speed = speedUpdate === undefined && sameModel ? data.value.speed : speedUpdate ?? undefined;
+      if (voiceUpdate !== undefined) validateVoice(choice, voice);
+      const other = getModelFormValues(choice, modelOptions, otherUpdates);
     data.value.model = getNodeModelKey(choice);
+      data.value.voice = voice;
+      data.value.speed = speed;
     if (args.language !== undefined) data.value.language = args.language;
     if (args.sampleRate !== undefined) data.value.sampleRate = args.sampleRate;
     if (args.format !== undefined) data.value.format = args.format;
@@ -345,7 +403,7 @@ nodeTools.register({
 });
 nodeTools.register({
   name: "generateAudio",
-  description: "使用当前提示词、模型、语种、采样率、格式和可选参考图片或音频启动后台生成；图片与音频互斥且合计最多一个，文本不限；立即返回已开始，用 getGenerationStatus 查询结果、cancelGeneration 停止",
+    description: "使用当前提示词、模型、音色、语速、语种、采样率、格式和可选参考图片或音频启动后台生成。图片与音频互斥且合计最多一个。立即返回已开始，用 getGenerationStatus 查询结果，cancelGeneration 停止。",
   parameters: z.strictObject({}),
   execute(_args, { signal }) {
     signal?.throwIfAborted();
