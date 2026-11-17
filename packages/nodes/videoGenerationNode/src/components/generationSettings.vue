@@ -12,12 +12,15 @@
       <el-select v-if="modes.length" v-model="mode" :disabled="disabled" :teleported="false" aria-label="视频生成模式">
         <el-option v-for="item in modes" :key="item.value" :value="item.value" :label="item.label" />
       </el-select>
-      <div v-if="durations.length || resolutions.length" class="outputOptions">
-        <div v-if="durations.length" class="outputField">
+      <div v-if="model" class="outputOptions">
+        <div class="outputField">
           <div class="sectionLabel">时长</div>
-          <el-select v-model="duration" :disabled="disabled" :teleported="false" aria-label="视频时长">
+          <el-select v-if="durations.length" v-model="duration" :disabled="disabled" :teleported="false" :aria-invalid="!!durationError" aria-label="视频时长">
             <el-option v-for="item in durations" :key="item" :value="item" :label="`${item}秒`" />
           </el-select>
+          <div v-else class="durationDefault">由模型决定</div>
+          <div v-if="durationError" class="durationError" role="status">{{ durationError }}</div>
+          <el-button v-if="durationError" link type="primary" :disabled="disabled" @click="duration = undefined">使用模型默认时长</el-button>
         </div>
         <div v-if="resolutions.length" class="outputField">
           <div class="sectionLabel">分辨率</div>
@@ -51,7 +54,7 @@ import { IconChevronDown, IconChevronUp } from "@tabler/icons-vue";
 import type { NodeMediaModel } from "@toonflow/nodes-scaffold/runtime";
 import modelForm from "@toonflow/node-shared/modelForm";
 
-const props = defineProps<{ model?: NodeMediaModel; disabled?: boolean; ratios: string[] }>();
+const props = defineProps<{ model?: NodeMediaModel; durationError?: string; disabled?: boolean; ratios: string[] }>();
 const settingsVisible = ref(false);
 const duration = defineModel<number | undefined>("duration", { required: true });
 const resolution = defineModel<string>("resolution", { required: true });
@@ -111,6 +114,8 @@ function ratioStyle(value: string) {
     gap: 12px;
     margin-bottom: 14px;
     .outputField { flex: 1; min-width: 0; }
+    .durationDefault { color: var(--el-text-color-secondary); }
+    .durationError { margin-top: 8px; color: var(--el-color-warning); font-size: 12px; }
   }
 
   .ratioOptions {

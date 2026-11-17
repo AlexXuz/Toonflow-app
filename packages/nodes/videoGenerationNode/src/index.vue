@@ -78,7 +78,7 @@
             </el-option-group>
           </el-select>
           <generationSettings
-            v-model:duration="data.duration"
+            v-model:duration="videoDuration"
             v-model:resolution="data.resolution"
             v-model:ratio="data.ratio"
             v-model:mode="data.mode"
@@ -86,6 +86,7 @@
             v-model:other="data.other"
             :ratios="ratioOptions"
             :model="selectedModel"
+            :durationError="durationError"
             :disabled="generating || deleting || !selectedModel" />
           <div class="generationActions">
             <mediaPrice v-if="generationInput" :input="{ ...generationInput, mediaType: 'video' }" :supported="selectedModel?.supportsPrice === true" />
@@ -168,6 +169,11 @@ watch(generating, value => { if (!value && !disposed && !deleting.value && !mode
 // ACT: 供应商未声明视频比例范围，沿用界面的通用比例，具体支持范围由供应商校验。
 const ratioOptions = ["16:9", "9:16", "1:1", "4:3", "3:4"];
 const selectedModel = useNodeModelSelection(models, computed({ get: () => data.value.model, set: value => { data.value.model = value; } }));
+const videoDuration = computed({
+  get: () => data.value.duration ?? getDefaultDuration(selectedModel.value),
+  set: value => { data.value.duration = value; },
+});
+const durationError = computed(() => getDurationError(selectedModel.value, data.value.duration));
 useModelForm(data, selectedModel);
 const selectedMode = computed(() => selectedModel.value?.mode?.find((item) => JSON.stringify(item) === data.value.mode) as NodeVideoRequest["mode"]);
 const frameMode = computed(() => ["startEndRequired", "endFrameOptional", "startFrameOptional"].includes(String(selectedMode.value)));
@@ -192,8 +198,22 @@ function getMatchingModes(choice?: NodeMediaModel) {
   });
 }
 
-function getDurations(choice: NodeMediaModel) {
-  return [...new Set((choice.durationResolutionMap ?? []).flatMap((item) => item.duration))].sort((a, b) => a - b);
+function getDurations(choice?: NodeMediaModel) {
+  return [...new Set((choice?.durationResolutionMap ?? []).flatMap((item) => item.duration))].sort((a, b) => a - b);
+}
+
+function getDefaultDuration(choice?: NodeMediaModel) {
+  const durations = getDurations(choice);
+  const preferred = choice?.defaultDuration;
+  return preferred !== undefined && durations.includes(preferred) ? preferred : durations[0];
+}
+
+function getDurationError(choice: NodeMediaModel | undefined, duration: number | undefined) {
+  if (!choice || duration == null) return;
+  const durations = getDurations(choice);
+  if (durations.includes(duration)) return;
+  if (!durations.length) return `已设置 ${duration} 秒，当前模型未声明可选时长。请在视频生成设置中使用模型默认时长，或更换模型。`;
+  return `当前模型不支持已设置的 ${duration} 秒。请在视频生成设置中选择 ${durations.join("、")} 秒。`;
 }
 
 function getResolutions(choice: NodeMediaModel, duration?: number) {
@@ -210,13 +230,13 @@ watch([selectedModel, matchingModes, () => data.value.mode], ([choice, matches])
     ?? modes.find((item) => JSON.stringify(item) === data.value.mode) ?? modes.find(Array.isArray) ?? modes[0];
   data.value.mode = mode === undefined ? "" : JSON.stringify(mode);
 }, { flush: "sync" });
-// ACT: 参数在节点内归一化，未选中、未挂载底部设置时也可由 Agent 直接生成。
-watch([selectedModel, () => data.value.duration], ([choice]) => {
+// ACT: 默认时长只在读取时计算，保留用户已选的值，模型能力变化时由提交校验提示。
+watch([selectedModel, videoDuration], ([choice, duration]) => {
   if (!choice) return;
-  const durations = getDurations(choice);
-  if (!durations.includes(data.value.duration!)) data.value.duration = durations[0];
-  const resolutions = getResolutions(choice, data.value.duration);
-  if (!resolutions.includes(data.value.resolution)) data.value.resolution = resolutions[0] ?? "";
+  if (!durationError.value) {
+    const resolutions = getResolutions(choice, duration);
+    if (!resolutions.includes(data.value.resolution)) data.value.resolution = resolutions[0] ?? "";
+  }
   if (!ratioOptions.includes(data.value.ratio)) data.value.ratio = "9:16";
   if (choice.audio !== "optional") data.value.generateAudio = choice.audio === true;
 }, { flush: "sync" });
@@ -234,7 +254,7 @@ const generationInput = computed(() => getGenerationInput(data.value.prompt));
 
 function getGenerationInput(prompt: string): Omit<NodeVideoRequest, "directory"> | undefined {
   const choice = selectedModel.value;
-  if (!choice) return;
+  if (!choice || durationError.value) return;
   const references = refList.value;
   const images: NonNullable<NodeVideoRequest["images"]> = [];
   const videos: NonNullable<NodeVideoRequest["videos"]> = [];
@@ -260,7 +280,7 @@ function getGenerationInput(prompt: string): Omit<NodeVideoRequest, "directory">
     ...getNodeModelIdentity(choice),
     prompt: getGenerationPrompt(prompt, references),
     mode: selectedMode.value,
-    duration: data.value.duration,
+    duration: videoDuration.value,
     resolution: data.value.resolution || undefined,
     ratio: data.value.ratio,
     generateAudio: choice.audio === "optional" ? data.value.generateAudio : choice.audio,
@@ -356,6 +376,7 @@ async function startGeneration() {
     return { status: "generating" };
   }
   const choice = selectedModel.value;
+  if (durationError.value) throw new Error(durationError.value);
   // ACT: 提交时按稳定 ID 解析，避免依赖编辑器挂载及异步重排同步。
   const references = referenceMentions.value;
   const prompt = data.value.promptModel.length ? getPromptText(data.value.promptModel, referenceId => {
@@ -422,7 +443,7 @@ function getConfig() {
     config: {
       providerId: selectedModel.value?.providerId ?? "",
       modelId: selectedModel.value?.modelId ?? "",
-      duration: data.value.duration,
+      duration: videoDuration.value,
       resolution: data.value.resolution,
       ratio: data.value.ratio,
       mode: selectedMode.value,
@@ -432,6 +453,7 @@ function getConfig() {
     models: models.value,
     ratios: ratioOptions,
     matchingModes: matchingModes.value,
+    durationError: durationError.value,
   };
 }
 
@@ -449,11 +471,11 @@ nodeTools.register({
 
 nodeTools.register({
   name: "setConfig",
-  description: "修改此视频生成节点的模型、时长、分辨率、比例、模式、声音或自定义配置 other；先用 getConfig 查询能力，providerId 与 modelId 必须同时提供；other 按目标模型 rules 的 field 和值要求填写，仅更新传入字段，其余保留，切换模型时使用新模型默认值；mode 使用返回的原始字符串或数组，须匹配当前引用；不修改提示词、不启动生成",
+  description: "修改此视频生成节点的模型、时长、分辨率、比例、模式、声音或自定义配置 other；先用 getConfig 查询能力，providerId 与 modelId 必须同时提供；仅更新传入字段，时长传 null 恢复模型默认值；若切换后所选时长不适用，请重新选择或恢复默认值；other 按目标模型 rules 填写；mode 使用返回的原始字符串或数组，须匹配当前引用；不修改提示词、不启动生成",
   parameters: z.strictObject({
     providerId: z.string().min(1).optional(),
     modelId: z.string().min(1).optional(),
-    duration: z.number().positive().optional(),
+    duration: z.number().positive().nullable().optional(),
     resolution: z.string().min(1).optional(),
     ratio: z.enum(ratioOptions).optional(),
     mode: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]).optional(),
@@ -469,17 +491,19 @@ nodeTools.register({
     const choice = args.modelId === undefined ? selectedModel.value
       : findNodeModel(models.value, { providerId: args.providerId ?? "", modelId: args.modelId });
     if (!choice) throw new Error("请选择 getConfig 返回的有效视频模型");
-    const durations = getDurations(choice);
-    if (args.duration !== undefined && !durations.includes(args.duration)) throw new Error(`当前模型不支持时长 ${args.duration}，可选：${durations.join("、")}`);
-    const duration = args.duration ?? (durations.includes(data.value.duration!) ? data.value.duration : durations[0]);
+    const savedDuration = args.duration === null ? undefined : args.duration ?? data.value.duration;
+    const invalidDuration = getDurationError(choice, savedDuration);
+    if (args.duration !== undefined && invalidDuration) throw new Error(invalidDuration);
+    const duration = savedDuration ?? getDefaultDuration(choice);
     const resolutions = getResolutions(choice, duration);
     if (args.resolution !== undefined && !resolutions.includes(args.resolution)) throw new Error(`当前时长不支持分辨率 ${args.resolution}，可选：${resolutions.join("、")}`);
-    const resolution = args.resolution ?? (resolutions.includes(data.value.resolution) ? data.value.resolution : resolutions[0] ?? "");
+    const keepResolution = invalidDuration || resolutions.includes(data.value.resolution);
+    const resolution = args.resolution ?? (keepResolution ? data.value.resolution : resolutions[0] ?? "");
     if (args.mode !== undefined && !getMatchingModes(choice).some((item) => JSON.stringify(item) === JSON.stringify(args.mode))) throw new Error("所选模式不受当前模型支持或不适用于当前引用，请根据模型能力及已连接素材选择");
     if (args.generateAudio !== undefined && choice.audio !== "optional" && args.generateAudio !== (choice.audio === true)) throw new Error("当前模型不支持切换声音，请查看 getConfig 返回的 audio 能力");
     const other = getModelFormValues(choice, choice === selectedModel.value ? data.value.other : {}, args.other);
     data.value.model = getNodeModelKey(choice);
-    data.value.duration = duration;
+    data.value.duration = savedDuration;
     data.value.resolution = resolution;
     if (args.ratio !== undefined) data.value.ratio = args.ratio;
     if (args.mode !== undefined) data.value.mode = JSON.stringify(args.mode);

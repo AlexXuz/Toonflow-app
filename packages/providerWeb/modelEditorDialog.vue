@@ -57,7 +57,7 @@
           </el-form-item>
           <el-form-item label="时长与分辨率" required>
             <div class="mappingEditor">
-              <div class="mappingHeader"><span>时长（秒）</span><span>分辨率</span></div>
+              <div class="mappingHeader"><span>时长（秒）</span><span>分辨率（可选）</span></div>
               <div v-for="(row, index) in draft.durationResolutionMap" :key="index" class="mappingRow">
                 <span class="rowIndex">{{ index + 1 }}</span>
                 <el-input-tag v-model="row.duration" placeholder="输入后按回车" :aria-label="`第 ${index + 1} 组时长`" />
@@ -238,7 +238,7 @@ function confirmModel() {
         const duration = row.duration.map(Number);
         const resolution = row.resolution.map(value => value.trim());
         if (!duration.length || duration.some(value => !Number.isFinite(value) || value <= 0)) throw new Error(`第 ${index + 1} 组时长必须是正数`);
-        if (!resolution.length || resolution.some(value => !value)) throw new Error(`请填写第 ${index + 1} 组分辨率`);
+        if (resolution.some(value => !value)) throw new Error(`第 ${index + 1} 组分辨率不能包含空白项`);
         return { duration, resolution };
       });
     }

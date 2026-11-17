@@ -31,15 +31,19 @@ export const mediaModelsSchema = z.array(z.object({
   rules: providerRulesSchema.optional(),
   imageSizes: z.array(z.string()).optional(),
   imageRatios: z.array(z.string()).optional(),
+  defaultDuration: z.number().positive().optional(),
   durationResolutionMap: z.array(z.object({
-    duration: z.array(z.number()),
+    duration: z.array(z.number().positive()),
     resolution: z.array(z.string()),
   }).catchall(z.json())).optional(),
   voices: z.array(z.object({
     title: z.string(),
     voice: z.string(),
   }).catchall(z.json())).optional(),
-}).catchall(z.json())).max(2000).refine(models => new Set(models.map(model => model.id)).size === models.length, "模型 ID 不能重复");
+}).catchall(z.json())).max(2000)
+  .refine(models => new Set(models.map(model => model.id)).size === models.length, "模型 ID 不能重复")
+  .refine(models => models.every(({ defaultDuration, durationResolutionMap }) =>
+    defaultDuration === undefined || durationResolutionMap?.some(row => row.duration.includes(defaultDuration))), "默认时长必须在可选时长列表中");
 
 function invalid(message: string, status = 400): never {
   throw Object.assign(new Error(message), { status });

@@ -129,10 +129,17 @@ async function pollVideo(context: ProviderContext, baseUrl: string, apiKey: stri
 export default {
   id: "muse",
   label: "Muse 视频",
-  version: "2.2.0",
-  readme: "Muse2API 异步视频适配器。请求地址可填写服务根地址或以 /v1 结尾的 Base URL。API Key 在配置表单填写。\n\n支持纯文字，以及图片、视频、音频参考，合计最多 10 个；保持素材顺序，超限会明确提示。引用标记自动转换为 [图1]、[视频1]、[音频1]。本地素材以 Data URL 发送。\n\n时长、比例、分辨率作为生成提示，实际结果由 Muse 决定，不承诺首尾帧强约束。提交后保存任务编号，最多等待 15 分钟；恢复和查询重试只查询原任务，不重复生成。",
+  version: "2.2.1",
+  readme: "Muse2API 异步视频适配器。请求地址可填写服务根地址或以 /v1 结尾的 Base URL。API Key 在配置表单填写。\n\n支持纯文字，以及图片、视频、音频参考，合计最多 10 个；保持素材顺序，超限会明确提示。引用标记自动转换为 [图1]、[视频1]、[音频1]。本地素材以 Data URL 发送。\n\n画布的「视频生成设置」可选目标时长 3、4、5、6、8、10 秒，默认 6 秒。时长、比例、分辨率作为生成提示，实际结果由 Muse 决定。提交后保存任务编号，最多等待 15 分钟；恢复和查询重试只查询原任务，不重复生成。",
   rules,
-  models: [{ id: "muse-video", label: "muse-video", type: "video", mode: ["text", ["imageReference:10", "videoReference:10", "audioReference:10"]] }],
+  models: [{
+    id: "muse-video",
+    label: "muse-video",
+    type: "video",
+    mode: ["text", ["imageReference:10", "videoReference:10", "audioReference:10"]],
+    defaultDuration: 6,
+    durationResolutionMap: [{ duration: [3, 4, 5, 6, 8, 10], resolution: [] }],
+  }],
   async generateVideo(request: MuseVideoRequest): Promise<MediaAsset[]> {
     const apiKey = this.config.apiKey.trim();
     if (!apiKey) throw new Error("请填写 API Key");
@@ -142,7 +149,9 @@ export default {
     if (request.firstFrame || request.lastFrame) throw new Error("Muse 不支持首尾帧强约束，请将素材作为普通参考图引用");
     const count = (request.images?.length ?? 0) + (request.videos?.length ?? 0) + (request.audios?.length ?? 0);
     if (count > 10) throw new Error(`Muse 最多支持 10 个参考素材，当前 ${count} 个；请调整引用`);
-    if (request.duration !== undefined && (!Number.isFinite(request.duration) || request.duration <= 0)) throw new Error("视频时长必须为正数");
+    if (request.duration !== undefined && (!Number.isSafeInteger(request.duration) || request.duration <= 0)) {
+      throw new Error("Muse 视频时长必须为正整数秒");
+    }
     const body = {
       model: request.model,
       prompt: videoPrompt(request),
