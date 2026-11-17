@@ -145,12 +145,6 @@ export function createCanvasQueries(source: {
   nodeToolPermissions(): NodeToolPermissions;
 }) {
   const sessionId = crypto.randomUUID();
-  function findNode(id: string) {
-    const node = source.findNode(id);
-    if (!node) throw new Error(`节点不存在：${id}`);
-    return node;
-  }
-
   return async function read(request: CanvasToolCall, canvasId: string, signal: AbortSignal) {
     if (!isCanvasRead(request.name)) throw new Error("未知画布查询");
     const name = request.name as "getCanvas" | "findCanvasNodes" | "getCanvasNodes" | "getCanvasEdges" | "getNodeTools";
@@ -177,6 +171,21 @@ export function createCanvasQueries(source: {
     }
     const items: unknown[] = [];
     let bytes = 0;
+    function requestedNodes(ids: string[]) {
+      const nodes: CanvasNode[] = [];
+      const missingNodeIds: string[] = [];
+      for (const id of new Set(ids)) {
+        const node = source.findNode(id);
+        if (node) nodes.push(node);
+        else missingNodeIds.push(id);
+      }
+      const missing = missingNodeIds.length ? {
+        missingNodeIds,
+        message: "缺失的节点 ID 不在当前画布。已有结果可继续使用，请用 findCanvasNodes 重新定位缺失目标。",
+      } : {};
+      if (missingNodeIds.length) bytes += jsonSize(missing);
+      return { nodes, missing };
+    }
     function append(value: unknown) {
       const size = jsonSize(value) + 1;
       if (bytes + size > pageBytes) {
@@ -237,9 +246,9 @@ export function createCanvasQueries(source: {
       }
       case "getCanvasNodes": {
         const args = canvasSchemas.getCanvasNodes.parse(request.args);
-        const ids = [...new Set(args.nodeIds)];
-        while (offset < ids.length) {
-          const node = findNode(ids[offset]!);
+        const { nodes, missing } = requestedNodes(args.nodeIds);
+        while (offset < nodes.length) {
+          const node = nodes[offset]!;
           const summary = canvasNodeSummary(node);
           const fields: Record<string, unknown> = {
             label: typeof node.data.label === "string" ? node.data.label : node.label ?? node.id,
@@ -274,13 +283,14 @@ export function createCanvasQueries(source: {
           if (!append(value)) break;
           offset++;
         }
-        return finish("nodes", offset < ids.length);
+        return finish("nodes", offset < nodes.length, missing);
       }
       case "getCanvasEdges": {
         const args = canvasSchemas.getCanvasEdges.parse(request.args);
-        const ids = args.nodeIds ? new Set(args.nodeIds) : undefined;
-        ids?.forEach(findNode);
+        const targets = args.nodeIds ? requestedNodes(args.nodeIds) : undefined;
+        const ids = targets ? new Set(targets.nodes.map(node => node.id)) : undefined;
         const edges = source.edges();
+        if (ids?.size === 0) return finish("edges", false, { scanned: 0, totalEdges: edges.length, ...targets?.missing });
         const start = offset;
         while (offset < edges.length && offset - start < scanLimit && items.length < args.limit) {
           const edge = edges[offset]!;
@@ -289,19 +299,19 @@ export function createCanvasQueries(source: {
           }
           offset++;
         }
-        return finish("edges", offset < edges.length, { scanned: offset - start, totalEdges: edges.length });
+        return finish("edges", offset < edges.length, { scanned: offset - start, totalEdges: edges.length, ...targets?.missing });
       }
       case "getNodeTools": {
         const args = canvasSchemas.getNodeTools.parse(request.args);
-        args.nodeIds.forEach(findNode);
+        const { nodes, missing } = requestedNodes(args.nodeIds);
         let index = 0;
-        for (const tool of source.nodeTools().list(args.nodeIds, args.names)) {
+        for (const tool of source.nodeTools().list(nodes.map(node => node.id), args.names)) {
           if (!isNodeToolAllowed(tool.name, permissions!)) continue;
           if (index++ < offset) continue;
-          if (items.length >= args.limit || !append(tool)) return finish("nodeTools", true);
+          if (items.length >= args.limit || !append(tool)) return finish("nodeTools", true, missing);
           offset++;
         }
-        return finish("nodeTools", false);
+        return finish("nodeTools", false, missing);
       }
     }
   };

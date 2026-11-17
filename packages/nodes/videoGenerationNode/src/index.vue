@@ -439,10 +439,11 @@ async function resizeVideo(event: Event) {
 }
 
 function getConfig() {
+  const model = selectedModel.value;
   return {
     config: {
-      providerId: selectedModel.value?.providerId ?? "",
-      modelId: selectedModel.value?.modelId ?? "",
+      providerId: model?.providerId ?? "",
+      modelId: model?.modelId ?? "",
       duration: videoDuration.value,
       resolution: data.value.resolution,
       ratio: data.value.ratio,
@@ -453,13 +454,14 @@ function getConfig() {
     models: models.value,
     ratios: ratioOptions,
     matchingModes: matchingModes.value,
+    availableResolutions: model ? getResolutions(model, videoDuration.value) : [],
     durationError: durationError.value,
   };
 }
 
 nodeTools.register({
   name: "getConfig",
-  description: "读取此视频生成节点的当前配置、自定义配置 other、可选视频模型能力、通用比例及适合当前引用的模式，models 中的 rules 声明自定义字段，不含密钥；时长与分辨率须符合 durationResolutionMap",
+  description: "读取视频节点当前参数、模型能力、比例及适合当前引用的 matchingModes。availableResolutions 是当前时长支持的分辨率，空列表表示分辨率由模型决定。调整时长后按目标时长查询模型的 durationResolutionMap。models.rules 描述自定义配置 other，不含密钥。",
   parameters: z.strictObject({}),
   async execute(_args, { signal }) {
     signal?.throwIfAborted();
@@ -471,7 +473,7 @@ nodeTools.register({
 
 nodeTools.register({
   name: "setConfig",
-  description: "修改此视频生成节点的模型、时长、分辨率、比例、模式、声音或自定义配置 other；先用 getConfig 查询能力，providerId 与 modelId 必须同时提供；仅更新传入字段，时长传 null 恢复模型默认值；若切换后所选时长不适用，请重新选择或恢复默认值；other 按目标模型 rules 填写；mode 使用返回的原始字符串或数组，须匹配当前引用；不修改提示词、不启动生成",
+  description: "修改此视频节点设置。先用 getConfig 查询能力，只传用户要改的字段，例如只改时长传 {duration:4}。resolution 仅可取目标时长列出的值，空列表时省略 resolution。切换模型须同时传 providerId 和 modelId，时长传 null 恢复默认值。mode 取 matchingModes 的原始字符串或数组，须匹配当前引用。other 按目标模型 rules 填写。只保存设置，不启动生成。",
   parameters: z.strictObject({
     providerId: z.string().min(1).optional(),
     modelId: z.string().min(1).optional(),
@@ -496,17 +498,30 @@ nodeTools.register({
     if (args.duration !== undefined && invalidDuration) throw new Error(invalidDuration);
     const duration = savedDuration ?? getDefaultDuration(choice);
     const resolutions = getResolutions(choice, duration);
-    if (args.resolution !== undefined && !resolutions.includes(args.resolution)) throw new Error(`当前时长不支持分辨率 ${args.resolution}，可选：${resolutions.join("、")}`);
+    if (args.resolution !== undefined && !resolutions.includes(args.resolution)) {
+      if (!resolutions.length) throw new Error("该时长的分辨率由模型决定，请省略 resolution。只改时长时仅传 duration。");
+      throw new Error(`当前时长不支持分辨率 ${args.resolution}，可选：${resolutions.join("、")}`);
+    }
     const keepResolution = invalidDuration || resolutions.includes(data.value.resolution);
     const resolution = args.resolution ?? (keepResolution ? data.value.resolution : resolutions[0] ?? "");
-    if (args.mode !== undefined && !getMatchingModes(choice).some((item) => JSON.stringify(item) === JSON.stringify(args.mode))) throw new Error("所选模式不受当前模型支持或不适用于当前引用，请根据模型能力及已连接素材选择");
+    let mode: string | undefined;
+    if (args.mode !== undefined) {
+      mode = JSON.stringify(args.mode);
+      const encoded = typeof args.mode === "string" ? args.mode.trimStart() : "";
+      if (encoded.startsWith("[") || encoded.startsWith('"')) {
+        // ACT: 兼容从画布 data.mode 读取的 JSON 字符串，仍按当前能力校验。
+        try { mode = JSON.stringify(JSON.parse(encoded)); }
+        catch { /* 仍用原始字符串参加模式校验。 */ }
+      }
+      if (!getMatchingModes(choice).some(item => JSON.stringify(item) === mode)) throw new Error("所选模式不适用于当前模型或引用，请使用 getConfig 返回的 matchingModes");
+    }
     if (args.generateAudio !== undefined && choice.audio !== "optional" && args.generateAudio !== (choice.audio === true)) throw new Error("当前模型不支持切换声音，请查看 getConfig 返回的 audio 能力");
     const other = getModelFormValues(choice, choice === selectedModel.value ? data.value.other : {}, args.other);
     data.value.model = getNodeModelKey(choice);
     data.value.duration = savedDuration;
     data.value.resolution = resolution;
     if (args.ratio !== undefined) data.value.ratio = args.ratio;
-    if (args.mode !== undefined) data.value.mode = JSON.stringify(args.mode);
+    if (mode !== undefined) data.value.mode = mode;
     if (args.generateAudio !== undefined) data.value.generateAudio = args.generateAudio;
     data.value.other = other;
     return getConfig();
